@@ -13,7 +13,10 @@
 
 #define DEFAULT_PRESSURE_LIMIT_BAR 200
 
-//#define DEFAULT_VREF 1100 // Use adc2_vref_to_gpio() to obtain a better estimate
+// Use MEASURE_V_REF to route VRef to GPIO 25 and measure it,
+// then define DEFAULT_VREF as the measurement in mV.
+//#define MEASURE_V_REF
+//#define DEFAULT_VREF 1100
 #define DEFAULT_VREF 1112
 #define VOLTAGE_SAMPLE_COUNT 100
 
@@ -32,7 +35,9 @@
 // 20k : 1k divider
 #define BATTERY_ADC_SCALING 21.0f
 
-#define BUZZER_PIN 18
+#define BATTERY_LOW_LIMIT_V 10.5
+
+#define BEEPER_PIN 18
 
 #define RELAIS_1_PIN 19
 #define RELAIS_2_PIN 21
@@ -45,6 +50,17 @@
 
 #define LOOP_FREQUENCY_HZ 100
 
+#define BEEPER_SEQUENCE_LENGTH 20
+#define BEEPER_MIN_DURATION_MS 10
+
+#define ORANGE 0xFBE0
+
+typedef struct beeperSequence_s {
+    uint8_t period;
+    uint8_t offset;
+    bool sequence[BEEPER_SEQUENCE_LENGTH];
+} beeperSequence_t;
+
 typedef enum {
     IGNITION_STATE_OFF = 0,
     IGNITION_STATE_ON,
@@ -52,7 +68,15 @@ typedef enum {
     IGNITION_STATE_COUNT
 } ignitionState_t;
 
-static const char *ignitionStates[] = { "OFF", "ON", "CONFIRM" };
+static const char *ignitionStateNames[] = { "OFF", "ON", "CONFIRM" };
+
+static const uint16_t ignitionStateColours[] = { TFT_RED, TFT_GREEN, TFT_YELLOW };
+
+static const beeperSequence_t beeperSequenceIgnitionOff = {
+    .period = 10,
+    .offset = 0,
+    .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
+};
 
 typedef enum {
     PRESSURE_STATE_FILLING = 0,
@@ -62,13 +86,43 @@ typedef enum {
     PRESSURE_STATE_COUNT
 } pressureState_t;
 
-static const char *pressureStates[] = { "FILLING", "APPROACHING", "OVER", "STOPPED" };
+static const char *pressureStateNames[] = { "FILLING", "APPROACHING", "OVER", "STOPPED" };
+
+static const uint16_t pressureStateColours[] = { TFT_GREEN, TFT_YELLOW, ORANGE, TFT_RED };
+
+static const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT] = {
+    {
+        .period = 1,
+        .offset = 0,
+        .sequence = { 0 },
+    }, {
+        .period = 5,
+        .offset = 0,
+        .sequence = { 1, 1, 1, 1, 1 },
+    }, {
+        .period = 1,
+        .offset = 0,
+        .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    }, {
+        .period = 2,
+        .offset = 0,
+        .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    },
+};
 
 typedef enum {
     BATTERY_STATE_OK = 0,
     BATTERY_STATE_LOW,
     BATTERY_STATE_COUNT
 } batteryState_t;
+
+static const uint16_t batteryStateColours[] = { TFT_GREEN, TFT_RED };
+
+static const beeperSequence_t beeperSequenceBatteryLow = {
+    .period = 10,
+    .offset = 5,
+    .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1 },
+};
 
 typedef enum {
     INPUT_STATE_PRESSURE_LIMIT = 0,
@@ -77,7 +131,19 @@ typedef enum {
     INPUT_STATE_COUNT
 } inputState_t;
 
-static const char *inputStates[] = { "LIMIT", "IGNITION", "OVERRIDE" };
+static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERRIDE" };
+
+static const beeperSequence_t beeperSequenceOverrideActive = {
+    .period = 1,
+    .offset = 0,
+    .sequence = { 1, 1, 1, 1, 1 },
+};
+
+static const beeperSequence_t beeperSequenceOverrideEnding = {
+    .period = 1,
+    .offset = 0,
+    .sequence = { 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
+};
 
 typedef struct globalState_s {
     float pressureBar;
@@ -102,6 +168,7 @@ Button2 buttonCycle(BUTTON_CYCLE_PIN);
 
 esp_adc_cal_characteristics_t adc_chars;
 
+/*
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
 void espDelay(uint32_t us)
 {   
@@ -109,6 +176,7 @@ void espDelay(uint32_t us)
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
     esp_light_sleep_start();
 }
+*/
 
 void handleUpButton(Button2 &b)
 {
@@ -155,10 +223,12 @@ void handleDownButton(Button2 &b)
 
         break;
     case INPUT_STATE_OVERRIDE:
+        if (state.pressureState < PRESSURE_STATE_OVER) {
+            state.overrideCountdownStartedMs = 0;
+        }
 
         break;
     default:
-        state.overrideCountdownStartedMs = millis();
 
         break;
     }
@@ -176,30 +246,22 @@ void buttonInit(void)
     buttonCycle.setPressedHandler(handleCycleButton);
 }
 
+#if defined(MEASURE_V_REF)
+void measureVRef(void)
+{
+    esp_err_t status = adc2_vref_to_gpio(GPIO_NUM_25);
+    if (status == ESP_OK) {
+        Serial.println("v_ref routed to GPIO");
+    } else {
+        Serial.println("failed to route v_ref");
+    }
+}
+#endif
+
 void setup(void)
 {
     Serial.begin(115200);
     Serial.println("Start");
-
-    state.pressureLimitBar = DEFAULT_PRESSURE_LIMIT_BAR;
-    
-    tft.init();
-    tft.setRotation(1);
-    tft.setTextDatum(MC_DATUM);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextFont(4);
-
-    pinMode(BUZZER_PIN, OUTPUT);
-    
-    pinMode(RELAIS_1_PIN, OUTPUT);
-    pinMode(RELAIS_2_PIN, OUTPUT);
-
-    digitalWrite(RELAIS_1_PIN, 1);
-    digitalWrite(RELAIS_2_PIN, 1);
- 
-    pinMode(LED_1_PIN, OUTPUT);
-
-    buttonInit();
 
     //Check TP is burned into eFuse
     if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
@@ -231,12 +293,32 @@ void setup(void)
         Serial.printf("Default Vref: %u mV\n", DEFAULT_VREF);
     }
 
-//    esp_err_t status = adc2_vref_to_gpio(GPIO_NUM_25);
-//    if (status == ESP_OK) {
-//        Serial.println("v_ref routed to GPIO");
-//    } else {
-//        Serial.println("failed to route v_ref");
-//    }
+#if defined(MEASURE_V_REF)
+    measureVRef();
+
+    while (true) {
+    }
+#endif
+
+    state.pressureLimitBar = DEFAULT_PRESSURE_LIMIT_BAR;
+
+    tft.init();
+    tft.setRotation(1);
+    tft.setTextDatum(MC_DATUM);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextFont(4);
+
+    pinMode(BEEPER_PIN, OUTPUT);
+    
+    pinMode(RELAIS_1_PIN, OUTPUT);
+    pinMode(RELAIS_2_PIN, OUTPUT);
+
+    digitalWrite(RELAIS_1_PIN, 1);
+    digitalWrite(RELAIS_2_PIN, 1);
+
+    pinMode(LED_1_PIN, OUTPUT);
+
+    buttonInit();
 }
 
 void readSensors(void)
@@ -275,24 +357,24 @@ void updateState(void)
 
     uint64_t nowMs = millis();
 
-    if (state.pressureBar < state.pressureLimitBar - PRESSURE_APPROACHING_THRESHOLD_BAR) {
-        state.pressureState = PRESSURE_STATE_FILLING;
-    } else if (state.pressureBar < state.pressureLimitBar) {
-        state.pressureState = PRESSURE_STATE_APPROACHING;
-        if (lastPressureState != state.pressureState) {
-            state.inputState = INPUT_STATE_OVERRIDE;
-        }
-    } else if (state.pressureBar < state.pressureLimitBar + PRESSURE_STOP_THRESHOLD_BAR || state.overrideCountdownStartedMs) {
-        state.pressureState = PRESSURE_STATE_OVER;
-        if (lastPressureState != state.pressureState) {
-            state.inputState = INPUT_STATE_OVERRIDE;
-        }
-    } else {
+    if (state.pressureBar >= state.pressureLimitBar + PRESSURE_STOP_THRESHOLD_BAR && !state.overrideCountdownStartedMs) {
         state.pressureState = PRESSURE_STATE_SAFETY_STOPPED;
         state.ignitionState = IGNITION_STATE_OFF;
         if (lastPressureState != state.pressureState) {
             state.inputState = INPUT_STATE_IGNITION;
         }
+    } else if (state.pressureBar >= state.pressureLimitBar) {
+        state.pressureState = PRESSURE_STATE_OVER;
+        if (lastPressureState != state.pressureState) {
+            state.inputState = INPUT_STATE_OVERRIDE;
+        }
+    } else if (state.pressureBar >= state.pressureLimitBar - PRESSURE_APPROACHING_THRESHOLD_BAR) {
+        state.pressureState = PRESSURE_STATE_APPROACHING;
+        if (lastPressureState != state.pressureState) {
+            state.inputState = INPUT_STATE_OVERRIDE;
+        }
+    } else {
+        state.pressureState = PRESSURE_STATE_FILLING;
     }
 
     if (state.overrideCountdownStartedMs) {
@@ -305,12 +387,64 @@ void updateState(void)
         }
     }
 
+    if (state.batteryV <= BATTERY_LOW_LIMIT_V) {
+        state.batteryState = BATTERY_STATE_LOW;
+    } else {
+        state.batteryState = BATTERY_STATE_OK;
+    }
+
     lastPressureState = state.pressureState;
 }
 
 void updateOutput(void)
 {
     digitalWrite(RELAIS_1_PIN, !state.ignitionState);
+}
+
+bool needsBeeperOn(beeperSequence_t sequence, uint32_t period, uint8_t position)
+{
+    if (period % sequence.period == sequence.offset && sequence.sequence[position]) {
+        return true;
+    }
+
+    return false;
+}
+
+void updateBeeper(void)
+{
+    static uint64_t lastRunTimeMs = 0;
+    static uint32_t sliceCount = 0;
+
+    uint64_t nowMs = millis();
+    if (nowMs - lastRunTimeMs >= BEEPER_MIN_DURATION_MS) {
+        lastRunTimeMs = nowMs;
+
+        sliceCount++;
+        uint8_t position = sliceCount % BEEPER_SEQUENCE_LENGTH;
+        uint32_t period = sliceCount / BEEPER_SEQUENCE_LENGTH;
+
+        bool beeperOn = false;
+
+        if (!state.overrideCountdownStartedMs) {
+            if (state.ignitionState == IGNITION_STATE_OFF) {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceIgnitionOff, period, position);
+            }
+
+            if (state.batteryState == BATTERY_STATE_LOW) {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceBatteryLow, period, position);
+            }
+
+            beeperOn = beeperOn || needsBeeperOn(pressureStateBeeperSequences[state.pressureState], period, position);
+        } else {
+            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
+            } else {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideActive, period, position);
+            }
+        }
+
+        digitalWrite(BEEPER_PIN, beeperOn);
+    }
 }
 
 void updateDisplay(void)
@@ -327,35 +461,41 @@ void updateDisplay(void)
 
         tft.setTextSize(3);
 
-        tft.setTextColor(TFT_RED);
+        tft.setTextColor(pressureStateColours[state.pressureState]);
         tft.setCursor(10, 0);
         tft.printf("%.1f", state.pressureBar);
 
         tft.setTextSize(1);
 
-        tft.setTextColor(TFT_RED);
         tft.setCursor(10, 70);
         tft.print("Limit:");
         tft.setCursor(125, 70);
         tft.printf("%d bar", state.pressureLimitBar);
 
-        tft.setTextColor(TFT_GREEN);
         tft.setCursor(10, 97);
         tft.print("State:");
         tft.setCursor(125, 97);
-        tft.print(pressureStates[state.pressureState]);
+        tft.print(pressureStateNames[state.pressureState]);
 
-        tft.setTextColor(TFT_GREEN);
+        if (state.overrideCountdownStartedMs) {
+            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
+                tft.setTextColor(TFT_RED);
+            } else {
+                tft.setTextColor(TFT_YELLOW);
+            }
+        } else {
+            tft.setTextColor(ignitionStateColours[state.ignitionState]);
+        }
         tft.setCursor(10, 124);
         tft.print("Ignition:");
         tft.setCursor(125, 124);
         if (state.overrideCountdownStartedMs) {
             tft.printf("%d s", (int)((state.overrideCountdownStartedMs + 1000 * OVERRIDE_DURATION_S - nowMs) / 1000));
         } else {
-            tft.printf(ignitionStates[state.ignitionState]);
+            tft.printf(ignitionStateNames[state.ignitionState]);
         }
 
-        tft.setTextColor(TFT_GREEN);
+        tft.setTextColor(batteryStateColours[state.batteryState]);
         tft.setCursor(10, 178);
         tft.print("Battery:");
         tft.setCursor(125, 178);
@@ -371,7 +511,7 @@ void updateDisplay(void)
         tft.setCursor(10, 207);
         tft.print("Input:");
         tft.setCursor(125, 207);
-        tft.print(inputStates[state.inputState]);
+        tft.print(inputStateNames[state.inputState]);
     }
 }
 
@@ -421,6 +561,8 @@ void loop(void)
     updateState();
 
     updateOutput();
+
+    updateBeeper();
 
     updateDisplay();
 
