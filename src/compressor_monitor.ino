@@ -518,6 +518,20 @@ void updateBeeper(void)
 void updateDisplay(void)
 {
 
+/*
+Geometry for 320 x 240 display:
+
+Top row,
+0, 0, 319, 239
+
+Left column:
+0, 70, 159, 239, in rows of 27 height
+
+Right column:
+160, 70, 319, 239, in rows of 27 height
+
+*/
+
 #define ROW_1 70
 #define ROW_2 97
 #define ROW_3 124
