@@ -50,6 +50,9 @@
 
 #define LOOP_FREQUENCY_HZ 100
 
+#define BUTTON_REPEAT_DELAY_MS 500
+#define BUTTON_REPEAT_INTERVAL_MS 100
+
 #define BEEPER_SEQUENCE_LENGTH 20
 #define BEEPER_MIN_DURATION_MS 10
 
@@ -156,6 +159,8 @@ typedef struct globalState_s {
     batteryState_t batteryState;
     inputState_t inputState;
     uint64_t runTimeMs;
+    uint64_t nextButtonRepeatEventMs;
+    Button2 *repeatEventButton;
 } globalState_t;
 
 globalState_t state;
@@ -178,53 +183,45 @@ void espDelay(uint32_t us)
 }
 */
 
-void handleUpButton(Button2 &b)
+void handlePressureLimitChange(Button2 &button)
 {
-    switch (state.inputState) {
-    case INPUT_STATE_PRESSURE_LIMIT:
+    if (button == buttonUp) {
         if (state.pressureLimitBar < 300) {
             state.pressureLimitBar++;
         }
-
-        break;
-    case INPUT_STATE_IGNITION:
-        if (state.ignitionState == IGNITION_STATE_OFF) {
-            state.ignitionState = IGNITION_STATE_ON;
-        } else if (state.ignitionState == IGNITION_STATE_CONFIRM) {
-            state.ignitionState = IGNITION_STATE_ON;
-        }
-
-        break;
-    case INPUT_STATE_OVERRIDE:
-        state.overrideCountdownStartedMs = millis();
-
-        break;
-    default:
-
-        break;
-    }
-}
-
-void handleDownButton(Button2 &b)
-{
-    switch (state.inputState) {
-    case INPUT_STATE_PRESSURE_LIMIT:
+    } else {
         if (state.pressureLimitBar > 0) {
             state.pressureLimitBar--;
         }
+    }
+}
+
+void handleUpDownButtonPressed(Button2 &button)
+{
+    switch (state.inputState) {
+    case INPUT_STATE_PRESSURE_LIMIT:
+        handlePressureLimitChange(button);
 
         break;
     case INPUT_STATE_IGNITION:
-        if (state.ignitionState == IGNITION_STATE_ON) {
-            state.ignitionState = IGNITION_STATE_CONFIRM;
-        } else if (state.ignitionState == IGNITION_STATE_CONFIRM) {
-            state.ignitionState = IGNITION_STATE_OFF;
+        if (button == buttonUp) {
+            state.ignitionState = IGNITION_STATE_ON;
+        } else {
+            if (state.ignitionState == IGNITION_STATE_ON) {
+                state.ignitionState = IGNITION_STATE_CONFIRM;
+            } else if (state.ignitionState == IGNITION_STATE_CONFIRM) {
+                state.ignitionState = IGNITION_STATE_OFF;
+            }
         }
 
         break;
     case INPUT_STATE_OVERRIDE:
-        if (state.pressureState < PRESSURE_STATE_OVER) {
-            state.overrideCountdownStartedMs = 0;
+        if (button == buttonUp) {
+            state.overrideCountdownStartedMs = millis();
+        } else {
+            if (state.pressureState < PRESSURE_STATE_OVER) {
+                state.overrideCountdownStartedMs = 0;
+            }
         }
 
         break;
@@ -232,18 +229,28 @@ void handleDownButton(Button2 &b)
 
         break;
     }
+
+    state.nextButtonRepeatEventMs = millis() + BUTTON_REPEAT_DELAY_MS;
+    state.repeatEventButton = &button;
 }
 
-void handleCycleButton(Button2 &b)
+void handleUpDownButtonReleased(Button2 &button)
+{
+    state.nextButtonRepeatEventMs = 0;
+}
+
+void handleCycleButtonPressed(Button2 &button)
 {
     state.inputState = (inputState_t)((state.inputState + 1) % INPUT_STATE_COUNT);
 }
 
 void buttonInit(void)
 {
-    buttonUp.setPressedHandler(handleUpButton);
-    buttonDown.setPressedHandler(handleDownButton);
-    buttonCycle.setPressedHandler(handleCycleButton);
+    buttonUp.setPressedHandler(handleUpDownButtonPressed);
+    buttonUp.setReleasedHandler(handleUpDownButtonReleased);
+    buttonDown.setPressedHandler(handleUpDownButtonPressed);
+    buttonDown.setReleasedHandler(handleUpDownButtonReleased);
+    buttonCycle.setPressedHandler(handleCycleButtonPressed);
 }
 
 #if defined(MEASURE_V_REF)
@@ -394,6 +401,14 @@ void updateState(void)
     }
 
     lastPressureState = state.pressureState;
+
+    if (state.nextButtonRepeatEventMs && state.nextButtonRepeatEventMs <= nowMs) {
+        if (state.inputState == INPUT_STATE_PRESSURE_LIMIT) {
+            handlePressureLimitChange(*state.repeatEventButton);
+        }
+
+        state.nextButtonRepeatEventMs += BUTTON_REPEAT_INTERVAL_MS;
+    }
 }
 
 void updateOutput(void)
