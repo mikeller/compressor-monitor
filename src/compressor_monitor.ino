@@ -11,6 +11,8 @@
 
 #define OVERRIDE_DURATION_S 60
 
+#define PURGE_INTERVAL_S (15 * 60)
+
 #define DEFAULT_PRESSURE_LIMIT_BAR 200
 
 // Use MEASURE_V_REF to route VRef to GPIO 25 and measure it,
@@ -76,7 +78,7 @@ static const char *ignitionStateNames[] = { "OFF", "ON", "CONFIRM" };
 static const uint16_t ignitionStateColours[] = { TFT_RED, TFT_GREEN, TFT_YELLOW };
 
 static const beeperSequence_t beeperSequenceIgnitionOff = {
-    .period = 10,
+    .period = 15,
     .offset = 0,
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
 };
@@ -107,7 +109,7 @@ static const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT]
         .offset = 0,
         .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
     }, {
-        .period = 2,
+        .period = 3,
         .offset = 0,
         .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
     },
@@ -122,7 +124,7 @@ typedef enum {
 static const uint16_t batteryStateColours[] = { TFT_GREEN, TFT_RED };
 
 static const beeperSequence_t beeperSequenceBatteryLow = {
-    .period = 10,
+    .period = 15,
     .offset = 5,
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1 },
 };
@@ -131,10 +133,11 @@ typedef enum {
     INPUT_STATE_PRESSURE_LIMIT = 0,
     INPUT_STATE_IGNITION,
     INPUT_STATE_OVERRIDE,
+    INPUT_STATE_PURGE,
     INPUT_STATE_COUNT
 } inputState_t;
 
-static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERRIDE" };
+static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERRIDE", "PURGE" };
 
 static const beeperSequence_t beeperSequenceOverrideActive = {
     .period = 1,
@@ -148,6 +151,12 @@ static const beeperSequence_t beeperSequenceOverrideEnding = {
     .sequence = { 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
 };
 
+static const beeperSequence_t beeperSequencePurgeNeeded = {
+    .period = 15,
+    .offset = 10,
+    .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1 },
+};
+
 typedef struct globalState_s {
     float pressureBar;
     float batteryV;
@@ -159,6 +168,7 @@ typedef struct globalState_s {
     batteryState_t batteryState;
     inputState_t inputState;
     uint64_t runTimeMs;
+    uint64_t lastPurgeRunTimeMs;
     uint64_t nextButtonRepeatEventMs;
     Button2 *repeatEventButton;
 } globalState_t;
@@ -222,6 +232,12 @@ void handleUpDownButtonPressed(Button2 &button)
             if (state.pressureState < PRESSURE_STATE_OVER) {
                 state.overrideCountdownStartedMs = 0;
             }
+        }
+
+        break;
+    case INPUT_STATE_PURGE:
+        if (button == buttonUp) {
+            state.lastPurgeRunTimeMs = state.runTimeMs;
         }
 
         break;
@@ -328,6 +344,11 @@ void setup(void)
     buttonInit();
 }
 
+int getTimeUntilPurgeS(void)
+{
+    return ((int)state.lastPurgeRunTimeMs + 1000 * PURGE_INTERVAL_S - (int)state.runTimeMs) / 1000;
+}
+
 void readSensors(void)
 {
     static uint32_t pressureSamples[VOLTAGE_SAMPLE_COUNT];
@@ -360,10 +381,32 @@ void readSensors(void)
 
 void updateState(void)
 {
-    static pressureState_t lastPressureState;
     static uint64_t lastRunTimeUpdateMs;
+    static bool lastDumpNeededState;
+    static pressureState_t lastPressureState;
 
     uint64_t nowMs = millis();
+
+    if (state.ignitionState != IGNITION_STATE_OFF) {
+        if (!lastRunTimeUpdateMs) {
+            lastRunTimeUpdateMs = nowMs;
+        } else {
+            state.runTimeMs += nowMs - lastRunTimeUpdateMs;
+            lastRunTimeUpdateMs = nowMs;
+        }
+    } else {
+        lastRunTimeUpdateMs = 0;
+    }
+
+    int timeUntilPurgeS = getTimeUntilPurgeS();
+    if (timeUntilPurgeS <= 0) {
+        if (!lastDumpNeededState) {
+            state.inputState = INPUT_STATE_PURGE;
+            lastDumpNeededState = true;
+        }
+    } else {
+        lastDumpNeededState = false;
+    }
 
     if (state.pressureBar >= state.pressureLimitBar + PRESSURE_STOP_THRESHOLD_BAR && !state.overrideCountdownStartedMs) {
         state.pressureState = PRESSURE_STATE_SAFETY_STOPPED;
@@ -403,23 +446,16 @@ void updateState(void)
 
     lastPressureState = state.pressureState;
 
+    if (timeUntilPurgeS <= -1 * PURGE_INTERVAL_S) {
+        state.ignitionState = IGNITION_STATE_OFF;
+    }
+
     if (state.nextButtonRepeatEventMs && state.nextButtonRepeatEventMs <= nowMs) {
         if (state.inputState == INPUT_STATE_PRESSURE_LIMIT) {
             handlePressureLimitChange(*state.repeatEventButton);
         }
 
         state.nextButtonRepeatEventMs += BUTTON_REPEAT_INTERVAL_MS;
-    }
-
-    if (state.ignitionState == IGNITION_STATE_ON) {
-        if (!lastRunTimeUpdateMs) {
-            lastRunTimeUpdateMs = nowMs;
-        } else {
-            state.runTimeMs += nowMs - lastRunTimeUpdateMs;
-            lastRunTimeUpdateMs = nowMs;
-        }
-    } else {
-        lastRunTimeUpdateMs = 0;
     }
 }
 
@@ -461,7 +497,12 @@ void updateBeeper(void)
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceBatteryLow, period, position);
             }
 
+            if (getTimeUntilPurgeS() <= 0) {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequencePurgeNeeded, period, position);
+            }
+
             beeperOn = beeperOn || needsBeeperOn(pressureStateBeeperSequences[state.pressureState], period, position);
+
         } else {
             if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
@@ -548,6 +589,19 @@ void updateDisplay(void)
         tft.print("T:");
         tft.setCursor(COL_2, ROW_1);
         tft.printf("%.2f h", state.runTimeMs / 1000.0 / 3600);
+
+        int timeUntilPurgeS = getTimeUntilPurgeS();
+        if (timeUntilPurgeS <= 0) {
+            tft.setTextColor(TFT_RED);
+        } else if (timeUntilPurgeS <= 60) {
+            tft.setTextColor(TFT_YELLOW);
+        } else {
+            tft.setTextColor(TFT_GREEN);
+        }
+        tft.setCursor(COL_HEADING_2, ROW_2);
+        tft.print("P:");
+        tft.setCursor(COL_2, ROW_2);
+        tft.printf("%s%d:%02d min", (timeUntilPurgeS <= 0) ? "-" : "", abs(timeUntilPurgeS / 60), abs(timeUntilPurgeS % 60));
 
         tft.setTextColor(TFT_GREEN);
         tft.setCursor(COL_HEADING_2, ROW_6);
