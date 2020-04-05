@@ -89,7 +89,7 @@ typedef enum {
     PRESSURE_STATE_COUNT
 } pressureState_t;
 
-static const char *pressureStateNames[] = { "FILLING", "APPROACHING", "OVER", "STOPPED" };
+static const char *pressureStateNames[] = { "FILL", "CLOSE", "OVER", "STOP" };
 
 static const uint16_t pressureStateColours[] = { TFT_GREEN, TFT_YELLOW, ORANGE, TFT_RED };
 
@@ -476,6 +476,19 @@ void updateBeeper(void)
 
 void updateDisplay(void)
 {
+
+#define ROW_1 70
+#define ROW_2 97
+#define ROW_3 124
+#define ROW_4 151
+#define ROW_5 178
+#define ROW_6 205
+
+#define COL_HEADING_1 10
+#define COL_1 35
+#define COL_HEADING_2 170
+#define COL_2 195
+
     static uint64_t lastRunTimeMs = 0;
     
     uint64_t nowMs = millis();
@@ -483,8 +496,8 @@ void updateDisplay(void)
         lastRunTimeMs = nowMs;
 
         tft.fillRect(10, 0, 220, 70, TFT_BLACK);
-        tft.fillRect(125, 97, 195, 27, TFT_BLACK);
-        tft.fillRect(125, 70, 125, 170, TFT_BLACK);
+        tft.fillRect(35, 70, 125, 170, TFT_BLACK);
+        tft.fillRect(195, 70, 125, 170, TFT_BLACK);
 
         tft.setTextSize(3);
 
@@ -494,15 +507,16 @@ void updateDisplay(void)
 
         tft.setTextSize(1);
 
-        tft.setCursor(10, 70);
-        tft.print("Limit:");
-        tft.setCursor(125, 70);
-        tft.printf("%d bar", state.pressureLimitBar);
-
-        tft.setCursor(10, 97);
-        tft.print("State:");
-        tft.setCursor(125, 97);
+        // Column 1:
+        tft.setCursor(COL_HEADING_1, ROW_1);
+        tft.print("S:");
+        tft.setCursor(COL_1, ROW_1);
         tft.print(pressureStateNames[state.pressureState]);
+
+        tft.setCursor(COL_HEADING_1, ROW_2);
+        tft.print("L:");
+        tft.setCursor(COL_1, ROW_2);
+        tft.printf("%d bar", state.pressureLimitBar);
 
         if (state.overrideCountdownStartedMs) {
             if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
@@ -513,9 +527,9 @@ void updateDisplay(void)
         } else {
             tft.setTextColor(ignitionStateColours[state.ignitionState]);
         }
-        tft.setCursor(10, 124);
-        tft.print("Ignition:");
-        tft.setCursor(125, 124);
+        tft.setCursor(COL_HEADING_1, ROW_3);
+        tft.print("I:");
+        tft.setCursor(COL_1, ROW_3);
         if (state.overrideCountdownStartedMs) {
             tft.printf("%d s", (int)((state.overrideCountdownStartedMs + 1000 * OVERRIDE_DURATION_S - nowMs) / 1000));
         } else {
@@ -523,21 +537,22 @@ void updateDisplay(void)
         }
 
         tft.setTextColor(batteryStateColours[state.batteryState]);
-        tft.setCursor(10, 178);
-        tft.print("Battery:");
-        tft.setCursor(125, 178);
+        tft.setCursor(COL_HEADING_1, ROW_5);
+        tft.print("B:");
+        tft.setCursor(COL_1, ROW_5);
         tft.printf("%.2f V", state.batteryV);
 
+        // Column 2:
         tft.setTextColor(TFT_GREEN);
-        tft.setCursor(10, 151);
-        tft.print("Run time:");
-        tft.setCursor(125, 151);
+        tft.setCursor(COL_HEADING_2, ROW_1);
+        tft.print("T:");
+        tft.setCursor(COL_2, ROW_1);
         tft.printf("%.2f h", state.runTimeMs / 1000.0 / 3600);
 
         tft.setTextColor(TFT_GREEN);
-        tft.setCursor(10, 207);
-        tft.print("Input:");
-        tft.setCursor(125, 207);
+        tft.setCursor(COL_HEADING_2, ROW_6);
+        tft.print("I:");
+        tft.setCursor(COL_2, ROW_6);
         tft.print(inputStateNames[state.inputState]);
     }
 }
