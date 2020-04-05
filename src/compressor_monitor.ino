@@ -361,6 +361,7 @@ void readSensors(void)
 void updateState(void)
 {
     static pressureState_t lastPressureState;
+    static uint64_t lastRunTimeUpdateMs;
 
     uint64_t nowMs = millis();
 
@@ -408,6 +409,17 @@ void updateState(void)
         }
 
         state.nextButtonRepeatEventMs += BUTTON_REPEAT_INTERVAL_MS;
+    }
+
+    if (state.ignitionState == IGNITION_STATE_ON) {
+        if (!lastRunTimeUpdateMs) {
+            lastRunTimeUpdateMs = nowMs;
+        } else {
+            state.runTimeMs += nowMs - lastRunTimeUpdateMs;
+            lastRunTimeUpdateMs = nowMs;
+        }
+    } else {
+        lastRunTimeUpdateMs = 0;
     }
 }
 
