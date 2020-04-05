@@ -12,6 +12,7 @@
 #define OVERRIDE_DURATION_S 60
 
 #define PURGE_INTERVAL_S (15 * 60)
+#define PURGE_GRACE_TIME_S (10 * 60)
 
 #define DEFAULT_PRESSURE_LIMIT_BAR 200
 
@@ -446,7 +447,7 @@ void updateState(void)
 
     lastPressureState = state.pressureState;
 
-    if (timeUntilPurgeS <= -1 * PURGE_INTERVAL_S) {
+    if (timeUntilPurgeS <= -1 * PURGE_GRACE_TIME_S) {
         state.ignitionState = IGNITION_STATE_OFF;
     }
 
