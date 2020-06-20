@@ -2,7 +2,7 @@
 
 Monitor / shut off your dive compressor with an ESP32 board.
 
-![Assembled Front](assets/front.jpg)
+![Assembled Front](assets/front.png)
 
 ## Parts list:
 
