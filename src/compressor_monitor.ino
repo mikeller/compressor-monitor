@@ -6,50 +6,10 @@
 #include <Button2.h>
 #include <esp_adc_cal.h>
 
-#define PRESSURE_APPROACHING_THRESHOLD_BAR 10
-#define PRESSURE_STOP_THRESHOLD_BAR 10
+// The configuration lives here
 
-#define OVERRIDE_DURATION_S 60
+#include "config.h"
 
-#define PURGE_INTERVAL_S (15 * 60)
-#define PURGE_GRACE_TIME_S (10 * 60)
-
-#define DEFAULT_PRESSURE_LIMIT_BAR 200
-
-// Use MEASURE_V_REF to route VRef to GPIO 25 and measure it,
-// then define DEFAULT_VREF as the measurement in mV.
-//#define MEASURE_V_REF
-//#define DEFAULT_VREF 1100
-#define DEFAULT_VREF 1112
-#define VOLTAGE_SAMPLE_COUNT 100
-
-#define SENSOR_ADC ADC1_CHANNEL_6
-// Input scaling of the ADC
-// 2k : 1k divider
-#define SENSOR_ADC_SCALING 3.0f
-// Conversion scaling / offset of the pressure sensor [bar / mV, bar]
-// 400 Bar sensor with output range 0.5V ... 4.5V
-#define SENSOR_SCALING 10.0f
-#define SENSOR_OFFSET (-50.0f)
-
-#define BATTERY_ADC ADC1_CHANNEL_7
-
-// Input scaling of the ADC
-// 20k : 1k divider
-#define BATTERY_ADC_SCALING 21.0f
-
-#define BATTERY_LOW_LIMIT_V 10.5
-
-#define BEEPER_PIN 18
-
-#define RELAIS_1_PIN 19
-#define RELAIS_2_PIN 21
-
-#define BUTTON_UP_PIN 3
-#define BUTTON_DOWN_PIN 22
-#define BUTTON_CYCLE_PIN 1
-
-#define LED_1_PIN 2
 
 #define LOOP_FREQUENCY_HZ 100
 
