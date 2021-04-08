@@ -2,6 +2,9 @@
  * Configuration settings. Copy into 'config.h' and customise
  */
 
+#define WIFI_SSID "MyNetwork"
+#define WIFI_PASSWORD "secret123"
+
 #define PRESSURE_APPROACHING_THRESHOLD_BAR 10
 #define PRESSURE_STOP_THRESHOLD_BAR 10
 

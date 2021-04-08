@@ -1,14 +1,19 @@
 #include <stdio.h>
 
-//#include <WiFi.h>
-
 #include <TFT_eSPI.h>
 #include <Button2.h>
 #include <esp_adc_cal.h>
 
+
 // The configuration lives here
 
 #include "config.h"
+
+#if defined(WIFI_SSID)
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+#endif
 
 
 #define LOOP_FREQUENCY_HZ 100
@@ -118,6 +123,13 @@ static const beeperSequence_t beeperSequencePurgeNeeded = {
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1 },
 };
 
+typedef enum {
+    SERVER_STATE_WIFI_DISCONNECTED,
+    SERVER_STATE_WIFI_CONNECTED,
+    SERVER_STATE_STARTING,
+    SERVER_STATE_RUNNING,
+} serverState_t;
+
 typedef struct globalState_s {
     float pressureBar;
     float batteryV;
@@ -132,6 +144,7 @@ typedef struct globalState_s {
     uint64_t lastPurgeRunTimeMs;
     uint64_t nextButtonRepeatEventMs;
     Button2 *repeatEventButton;
+    serverState_t serverState;
 } globalState_t;
 
 globalState_t state;
@@ -143,6 +156,10 @@ Button2 buttonDown(BUTTON_DOWN_PIN);
 Button2 buttonCycle(BUTTON_CYCLE_PIN);
 
 esp_adc_cal_characteristics_t adc_chars;
+
+#if defined(WIFI_SSID)
+WebServer webServer(80);
+#endif
 
 /*
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
@@ -221,7 +238,7 @@ void handleCycleButtonPressed(Button2 &button)
     state.inputState = (inputState_t)((state.inputState + 1) % INPUT_STATE_COUNT);
 }
 
-void buttonInit(void)
+void setupButtons(void)
 {
     buttonUp.setPressedHandler(handleUpDownButtonPressed);
     buttonUp.setReleasedHandler(handleUpDownButtonReleased);
@@ -242,11 +259,8 @@ void measureVRef(void)
 }
 #endif
 
-void setup(void)
+void setupAdc(void)
 {
-    Serial.begin(115200);
-    Serial.println("Start");
-
     //Check TP is burned into eFuse
     if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
         Serial.println("eFuse Two Point: Supported");
@@ -283,14 +297,27 @@ void setup(void)
     while (true) {
     }
 #endif
+}
 
-    state.pressureLimitBar = DEFAULT_PRESSURE_LIMIT_BAR;
-
+void setupDisplay(void)
+{
     tft.init();
     tft.setRotation(1);
     tft.setTextDatum(MC_DATUM);
     tft.fillScreen(TFT_BLACK);
     tft.setTextFont(4);
+}
+
+void setup(void)
+{
+    Serial.begin(115200);
+    Serial.println("Start");
+
+    setupAdc();
+
+    state.pressureLimitBar = DEFAULT_PRESSURE_LIMIT_BAR;
+
+    setupDisplay();
 
     pinMode(BEEPER_PIN, OUTPUT);
     
@@ -302,7 +329,7 @@ void setup(void)
 
     pinMode(LED_1_PIN, OUTPUT);
 
-    buttonInit();
+    setupButtons();
 }
 
 int getTimeUntilPurgeS(void)
@@ -593,37 +620,52 @@ void updateButtons(void)
     buttonCycle.loop();
 }
 
-/*void wifi_scan(void)
+#if defined(WIFI_SSID)
+void handleGetData(void)
 {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextSize(1);
+    webServer.send(200, F("text/plain"), "foo");
+}
 
-    tft.drawString("Scan Network", tft.width() / 2, tft.height() / 2);
+void updateWebServer(void)
+{
+    static uint64_t delayUntilMs = 0;
+    static int wifiStatus = WL_IDLE_STATUS;
 
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(100);
-
-    int16_t n = WiFi.scanNetworks();
-    tft.fillScreen(TFT_BLACK);
-    if (n == 0) {
-        tft.drawString("no networks found", tft.width() / 2, tft.height() / 2);
+    uint64_t nowMs = millis();
+    wifiStatus = WiFi.status();
+    if (wifiStatus != WL_CONNECTED) {
+        state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
     } else {
-        tft.setCursor(0, 0);
-        Serial.printf("Found %d net\n", n);
-        for (int i = 0; i < n; ++i) {
-            char buff[512];
-            sprintf(buff,
-                    "[%d]:%s(%d)",
-                    i + 1,
-                    WiFi.SSID(i).c_str(),
-                    WiFi.RSSI(i));
-            tft.println(buff);
+        if (state.serverState = SERVER_STATE_WIFI_DISCONNECTED) {
+            state.serverState = SERVER_STATE_WIFI_CONNECTED;
+            delayUntilMs = 0;
         }
     }
-    WiFi.mode(WIFI_OFF);
-}*/
+
+    if (nowMs < delayUntilMs) {
+        return;
+    }
+
+    switch (state.serverState) {
+    case SERVER_STATE_WIFI_DISCONNECTED:
+        wifiStatus = WiFi.begin((char *)WIFI_SSID, (char *)WIFI_PASSWORD);
+           delayUntilMs = nowMs + 10000; // wait for WiFi to connect
+
+        break;
+    case SERVER_STATE_WIFI_CONNECTED:
+        webServer.on(F("/api/getData"), handleGetData);
+        webServer.begin();
+        state.serverState = SERVER_STATE_STARTING;
+        delayUntilMs = nowMs + 100;
+
+        break;
+    case SERVER_STATE_STARTING:
+        state.serverState = SERVER_STATE_RUNNING;
+
+        break;
+    }
+}
+#endif
 
 void loop(void)
 {
@@ -638,4 +680,8 @@ void loop(void)
     updateDisplay();
 
     updateButtons();
+
+#if defined(WIFI_SSID)
+    updateWebServer();
+#endif
 }
