@@ -12,6 +12,7 @@
 #if defined(WIFI_SSID)
 #include <WiFi.h>
 #include <WebServer.h>
+#define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
 #endif
 
@@ -103,7 +104,7 @@ typedef enum {
     INPUT_STATE_COUNT
 } inputState_t;
 
-static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERRIDE", "PURGE" };
+static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERR", "PURGE" };
 
 static const beeperSequence_t beeperSequenceOverrideActive = {
     .period = 1,
@@ -130,12 +131,15 @@ typedef enum {
     SERVER_STATE_RUNNING,
 } serverState_t;
 
+static const uint16_t serverStateColours[] = { TFT_RED, TFT_ORANGE, TFT_YELLOW, TFT_GREEN };
+
+static const char *serverStateNames[] = { "SEARCH", "CONN", "START", "RUNN" };
+
 typedef struct globalState_s {
     float pressureBar;
     float batteryV;
     uint64_t overrideCountdownStartedMs;
     uint8_t pressureLimitBar;
-    bool ledOn;
     ignitionState_t ignitionState;
     pressureState_t pressureState;
     batteryState_t batteryState;
@@ -161,12 +165,13 @@ esp_adc_cal_characteristics_t adc_chars;
 WebServer webServer(80);
 #endif
 
-/*
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
+// Unfortunately this does not work with WiFi
+/*
 void espDelay(uint32_t us)
 {   
     esp_sleep_enable_timer_wakeup(us);
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
     esp_light_sleep_start();
 }
 */
@@ -332,9 +337,9 @@ void setup(void)
     setupButtons();
 }
 
-int getTimeUntilPurgeS(void)
+int64_t getTimeUntilPurgeMs(void)
 {
-    return ((int)state.lastPurgeRunTimeMs + 1000 * PURGE_INTERVAL_S - (int)state.runTimeMs) / 1000;
+    return state.lastPurgeRunTimeMs + 1000 * PURGE_INTERVAL_S - state.runTimeMs;
 }
 
 void readSensors(void)
@@ -386,8 +391,8 @@ void updateState(void)
         lastRunTimeUpdateMs = 0;
     }
 
-    int timeUntilPurgeS = getTimeUntilPurgeS();
-    if (timeUntilPurgeS <= 0) {
+    int64_t timeUntilPurgeMs = getTimeUntilPurgeMs();
+    if (timeUntilPurgeMs <= 0) {
         if (!lastDumpNeededState) {
             state.inputState = INPUT_STATE_PURGE;
             lastDumpNeededState = true;
@@ -434,7 +439,7 @@ void updateState(void)
 
     lastPressureState = state.pressureState;
 
-    if (timeUntilPurgeS <= -1 * PURGE_GRACE_TIME_S) {
+    if (timeUntilPurgeMs <= -1000 * PURGE_GRACE_TIME_S) {
         state.ignitionState = IGNITION_STATE_OFF;
     }
 
@@ -485,7 +490,7 @@ void updateBeeper(void)
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceBatteryLow, period, position);
             }
 
-            if (getTimeUntilPurgeS() <= 0) {
+            if (getTimeUntilPurgeMs() <= 0) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequencePurgeNeeded, period, position);
             }
 
@@ -520,6 +525,9 @@ Right column:
 
 */
 
+#define HEADER_X 10
+#define HEADER_Y 0
+
 #define ROW_1 70
 #define ROW_2 97
 #define ROW_3 124
@@ -528,9 +536,9 @@ Right column:
 #define ROW_6 205
 
 #define COL_HEADING_1 10
-#define COL_1 35
+#define COL_1 38
 #define COL_HEADING_2 170
-#define COL_2 195
+#define COL_2 198
 
     static uint64_t lastRunTimeMs = 0;
     
@@ -538,14 +546,15 @@ Right column:
     if (nowMs - lastRunTimeMs >= 200) {
         lastRunTimeMs = nowMs;
 
-        tft.fillRect(10, 0, 220, 70, TFT_BLACK);
-        tft.fillRect(35, 70, 125, 170, TFT_BLACK);
-        tft.fillRect(195, 70, 125, 170, TFT_BLACK);
+        tft.fillRect(HEADER_X, HEADER_Y, 220, 70, TFT_BLACK);
+        tft.fillRect(COL_1, ROW_1, 122, 170, TFT_BLACK);
+        tft.fillRect(COL_2, ROW_1, 122, 170, TFT_BLACK);
+        tft.fillRect(COL_HEADING_2, ROW_5, 28, 27, TFT_BLACK);
 
         tft.setTextSize(3);
 
         tft.setTextColor(pressureStateColours[state.pressureState]);
-        tft.setCursor(10, 0);
+        tft.setCursor(HEADER_X, HEADER_Y);
         tft.printf("%.1f", state.pressureBar);
 
         tft.setTextSize(1);
@@ -580,10 +589,23 @@ Right column:
         }
 
         tft.setTextColor(batteryStateColours[state.batteryState]);
-        tft.setCursor(COL_HEADING_1, ROW_5);
+        tft.setCursor(COL_HEADING_1, ROW_4);
         tft.print("B:");
-        tft.setCursor(COL_1, ROW_5);
+        tft.setCursor(COL_1, ROW_4);
         tft.printf("%.2f V", state.batteryV);
+
+#if defined(WIFI_SSID)
+        tft.setTextColor(serverStateColours[state.serverState]);
+        tft.setCursor(COL_HEADING_1, ROW_5);
+        tft.print("W:");
+        tft.setCursor(COL_1, ROW_5);
+        if (state.serverState < SERVER_STATE_WIFI_CONNECTED) {
+            tft.print(serverStateNames[state.serverState]);
+        } else {
+            IPAddress ip = WiFi.localIP();
+            tft.print(ip);
+        }
+#endif
 
         // Column 2:
         tft.setTextColor(TFT_GREEN);
@@ -592,10 +614,10 @@ Right column:
         tft.setCursor(COL_2, ROW_1);
         tft.printf("%.2f h", state.runTimeMs / 1000.0 / 3600);
 
-        int timeUntilPurgeS = getTimeUntilPurgeS();
-        if (timeUntilPurgeS <= 0) {
+        int64_t timeUntilPurgeMs = getTimeUntilPurgeMs();
+        if (timeUntilPurgeMs <= 0) {
             tft.setTextColor(TFT_RED);
-        } else if (timeUntilPurgeS <= 60) {
+        } else if (timeUntilPurgeMs <= 60000) {
             tft.setTextColor(TFT_YELLOW);
         } else {
             tft.setTextColor(TFT_GREEN);
@@ -603,7 +625,7 @@ Right column:
         tft.setCursor(COL_HEADING_2, ROW_2);
         tft.print("P:");
         tft.setCursor(COL_2, ROW_2);
-        tft.printf("%s%d:%02d min", (timeUntilPurgeS <= 0) ? "-" : "", abs(timeUntilPurgeS / 60), abs(timeUntilPurgeS % 60));
+        tft.printf("%s%d:%02d min", (timeUntilPurgeMs <= 0) ? "-" : "", (int)abs(timeUntilPurgeMs / 60000), (int)abs((timeUntilPurgeMs / 1000) % 60));
 
         tft.setTextColor(TFT_GREEN);
         tft.setCursor(COL_HEADING_2, ROW_6);
@@ -621,9 +643,32 @@ void updateButtons(void)
 }
 
 #if defined(WIFI_SSID)
+
+#define DATA_BUFFER_SIZE 512
+
+String getDataJson(void)
+{
+    DynamicJsonDocument data(DATA_BUFFER_SIZE);
+
+    data["pressureBar"] = state.pressureBar;
+    data["pressureLimitBar"] = state.pressureLimitBar;
+    data["pressureState"] = pressureStateNames[state.pressureState];
+    data["ignitionState"] = ignitionStateNames[state.ignitionState];
+    data["overrideCountdownDurationMs"] = state.overrideCountdownStartedMs ? millis() - state.overrideCountdownStartedMs : 0;
+    data["runTimeMs"] = state.runTimeMs;
+    data["timeUntilPurgeMs"] = getTimeUntilPurgeMs();
+    data["batteryV"] = state.batteryV;
+
+    String dataJson;
+    serializeJsonPretty(data, dataJson);
+    return dataJson;
+}
+
 void handleGetData(void)
 {
-    webServer.send(200, F("text/plain"), "foo");
+    char response[DATA_BUFFER_SIZE];
+    getDataJson().toCharArray(response, DATA_BUFFER_SIZE);
+    webServer.send(200, F("application/json"), response);
 }
 
 void updateWebServer(void)
@@ -636,7 +681,7 @@ void updateWebServer(void)
     if (wifiStatus != WL_CONNECTED) {
         state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
     } else {
-        if (state.serverState = SERVER_STATE_WIFI_DISCONNECTED) {
+        if (state.serverState == SERVER_STATE_WIFI_DISCONNECTED) {
             state.serverState = SERVER_STATE_WIFI_CONNECTED;
             delayUntilMs = 0;
         }
@@ -663,6 +708,10 @@ void updateWebServer(void)
         state.serverState = SERVER_STATE_RUNNING;
 
         break;
+    default:
+        webServer.handleClient();
+
+        break;
     }
 }
 #endif
@@ -684,4 +733,6 @@ void loop(void)
 #if defined(WIFI_SSID)
     updateWebServer();
 #endif
+
+    delay(2);
 }
