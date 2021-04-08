@@ -11,6 +11,7 @@
 
 #if defined(WIFI_SSID)
 #include <WiFi.h>
+#include <SPIFFS.h>
 #include <WebServer.h>
 #define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
@@ -317,6 +318,10 @@ void setup(void)
 {
     Serial.begin(115200);
     Serial.println("Start");
+
+    if (!SPIFFS.begin()) {
+        Serial.println("An Error has occurred while mounting SPIFFS");
+    }
 
     setupAdc();
 
@@ -699,6 +704,10 @@ void updateWebServer(void)
         break;
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on(F("/api/getData"), handleGetData);
+
+        webServer.serveStatic("/", SPIFFS, "/web/index.html");
+        webServer.serveStatic("/favicon.ico", SPIFFS, "/web/favicon.ico");
+
         webServer.begin();
         state.serverState = SERVER_STATE_STARTING;
         delayUntilMs = nowMs + 100;

@@ -1,0 +1,69 @@
+<html>
+  <head>
+   <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+   <script type="text/javascript">
+      const url = '/api/getData';
+
+      google.charts.load('current', {'packages':['gauge']});
+      google.charts.setOnLoadCallback(drawChart);
+
+      function drawChart() {
+        let pressureData = google.visualization.arrayToDataTable([
+          ['Label', 'Value'],
+          ['Pressure [Bar]', 0],
+        ]);
+
+        let pressureOptions = {
+          max: 250,
+          width: 400, height: 400,
+          redFrom: 200, redTo: 250,
+          yellowFrom: 190, yellowTo: 200,
+          minorTicks: 10
+        };
+
+        let pressureChart = new google.visualization.Gauge(document.getElementById('pressure_chart_div'));
+
+        pressureChart.draw(pressureData, pressureOptions);
+
+        let batteryData = google.visualization.arrayToDataTable([
+          ['Label', 'Value'],
+          ['Voltage', 0],
+        ]);
+
+        let batteryOptions = {
+          max: 20,
+          width: 240, height: 240,
+          redFrom: 0, redTo: 9,
+          yellowFrom: 9, yellowTo: 10.5,
+          minorTicks: 1
+        };
+
+        let batteryChart = new google.visualization.Gauge(document.getElementById('battery_chart_div'));
+
+        pressureChart.draw(batteryData, batteryOptions);
+
+        setInterval(function() {
+          fetch(url)
+            .then(result => result.json())
+            .then((data) => {
+              pressureData.setValue(0, 1, data.pressureBar);
+              if (pressureOptions.redFrom !== data.pressureLimitBar) {
+                pressureOptions.redFrom = data.pressureLimitBar;
+                pressureOptions.yellowTo = data.pressureLimitBar;
+                pressureOptions.yellowFrom = data.pressureLimitBar - 10;
+              }
+              pressureChart.draw(pressureData, pressureOptions);
+
+              batteryData.setValue(0, 1, data.batteryV);
+              batteryChart.draw(batteryData, batteryOptions);
+            })
+            .catch(err => { throw err });
+        }, 1000);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="pressure_chart_div" style="width: 400px; height: 400px;"></div>
+    <div id="battery_chart_div" style="width: 240px; height: 240px;"></div>
+  </body>
+</html>
