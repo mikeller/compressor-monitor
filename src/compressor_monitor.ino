@@ -706,6 +706,7 @@ void updateWebServer(void)
         webServer.on(F("/api/getData"), handleGetData);
 
         webServer.serveStatic("/", SPIFFS, "/web/index.html");
+        webServer.serveStatic("/fetch_data.js", SPIFFS, "/web/fetch_data.js");
         webServer.serveStatic("/favicon.ico", SPIFFS, "/web/favicon.ico");
 
         webServer.begin();
