@@ -1,0 +1,35 @@
+:root {
+	font-family: arial,sans-serif;
+	font-size: 18px;
+}
+
+#pressure_chart_div {
+	width: 400px;
+	height: 400px;
+}
+
+.main_bar {
+	display: flex;
+	height: 200px;
+}
+
+.chart {
+	width: 200px;
+}
+
+.text_box {
+	width: 200px;
+	margin-left: 30px;
+	margin-top: 10px;
+}
+
+.data_heading {
+	height: 20px;
+}
+
+.data_text {
+	height: 40px;
+	line-height: 40px;
+	font-size: 24px;
+	font-weight: bold;
+}
