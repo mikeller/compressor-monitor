@@ -1,24 +1,25 @@
 <html>
   <head>
-   <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-   <script type="text/javascript" src="/fetch_data.js"></script>
+    <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen"/>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript" src="fetch_data.js"></script>
   </head>
   <body>
-    <div id="pressure_chart_div" style="width: 400px; height: 400px;"></div>
-    <div style="display: flex; height: 200px;">
-      <div id="purge_chart_div" style="width: 200px;"></div>
-      <div style="width: 200px; margin-left: 30px; margin-top: 10px;">
-        <div style="height: 20px;">Pressure Status:</div>
-        <div style="height: 40px;" id="pressure_status_text"></div>
-        <div style="height: 20px;">Ignition Status:</div>
-        <div style="height: 40px;" id="ignition_status_text"></div>
-        <div style="height: 20px;">Run time:</div>
-        <div style="height: 40px;" id="run_time_text"></div>
+    <div id="pressure_chart_div"></div>
+    <div class="main_bar">
+      <div class="chart" id="purge_chart_div"></div>
+      <div class="text_box">
+        <div class="data_heading">Pressure Status:</div>
+        <div class="data_text" id="pressure_status_text"></div>
+        <div class="data_heading">Ignition Status:</div>
+        <div class="data_text" id="ignition_status_text"></div>
+        <div class="data_heading">Run time:</div>
+        <div class="data_text" id="run_time_text"></div>
       </div>
     </div>
-    <div style="display: flex; height: 200px;">
-      <div id="battery_chart_div" style="width: 200px;"></div>
-      <div id="override_chart_div" style="width: 200px;"></div>
+    <div class="main_bar">
+      <div class="chart" id="battery_chart_div"></div>
+      <div class="chart" id="override_chart_div"></div>
     </div>
   </body>
 </html>
