@@ -33,3 +33,37 @@
 	font-size: 24px;
 	font-weight: bold;
 }
+
+@media (min-resolution: 150dpi) {
+    :root {
+	    font-size: 36px;
+    }
+
+    #pressure_chart_div {
+	    width: 800px;
+	    height: 800px;
+    }
+
+    .main_bar {
+	    height: 400px;
+    }
+
+    .chart {
+	    width: 400px;
+    }
+
+    .text_box {
+	    width: 400px;
+    }
+
+    .data_heading {
+	    height: 40px;
+    }
+
+    .data_text {
+	    height: 80px;
+	    line-height: 80px;
+	    font-size: 48px;
+    }
+}
+
