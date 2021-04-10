@@ -4,6 +4,7 @@
 #include <Button2.h>
 #include <esp_adc_cal.h>
 
+#include "compressor_monitor_logo.c"
 
 // The configuration lives here
 
@@ -310,8 +311,19 @@ void setupDisplay(void)
     tft.init();
     tft.setRotation(1);
     tft.setTextDatum(MC_DATUM);
-    tft.fillScreen(TFT_BLACK);
     tft.setTextFont(4);
+
+    tft.fillScreen(TFT_BLACK);
+
+    // Swap the colour byte order when rendering
+    tft.setSwapBytes(true);
+
+    // Draw the logo
+    tft.pushImage(50, 10, 220, 220, compressor_monitor_logo);
+
+    delay(5000);
+
+    tft.fillScreen(TFT_BLACK);
 }
 
 void setup(void)

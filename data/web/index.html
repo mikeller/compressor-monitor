@@ -2,10 +2,19 @@
   <head>
     <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen"/>
     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-    <script type="text/javascript" src="fetch_data.js"></script>
+    <script type="text/javascript">
+      setTimeout(function() {
+        let script = document.createElement('script');
+        script.src = "fetch_data.js";
+        script.setAttribute('async', 'true');
+        document.documentElement.firstChild.appendChild(script);
+      }, 1000);
+    </script>
   </head>
   <body>
-    <div id="pressure_chart_div"></div>
+    <div class="box">
+      <div id="pressure_chart_div"></div>
+    </div>
     <div class="main_bar">
       <div class="chart" id="purge_chart_div"></div>
       <div class="text_box">

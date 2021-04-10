@@ -13,10 +13,9 @@ function drawChart() {
 
   let pressureOptions = {
     max: 250,
-    width: 400, height: 400,
     redFrom: 200, redTo: 250,
     yellowFrom: 190, yellowTo: 200,
-    minorTicks: 10
+    minorTicks: 10,
   };
 
   let pressureChart = new google.visualization.Gauge(document.getElementById('pressure_chart_div'));
@@ -30,10 +29,9 @@ function drawChart() {
 
   let overrideOptions = {
     max: 61,
-    width: 200, height: 200,
     redFrom: 0, redTo: 10,
     yellowFrom: 10, yellowTo: 60,
-    minorTicks: 1
+    minorTicks: 1,
   };
 
   let overrideChart = new google.visualization.Gauge(document.getElementById('override_chart_div'));
@@ -47,10 +45,9 @@ function drawChart() {
 
   let purgeOptions = {
     min: -10, max: 15,
-    width: 200, height: 200,
     redFrom: -10, redTo: 0,
     yellowFrom: 0, yellowTo: 1,
-    minorTicks: 1
+    minorTicks: 1,
   };
 
   let purgeChart = new google.visualization.Gauge(document.getElementById('purge_chart_div'));
@@ -64,10 +61,9 @@ function drawChart() {
 
   let batteryOptions = {
     max: 20,
-    width: 200, height: 200,
     redFrom: 0, redTo: 9,
     yellowFrom: 9, yellowTo: 10.5,
-    minorTicks: 1
+    minorTicks: 1,
   };
 
   let batteryChart = new google.visualization.Gauge(document.getElementById('battery_chart_div'));
@@ -94,6 +90,11 @@ function drawChart() {
 
         batteryData.setValue(0, 1, data.batteryV);
         batteryChart.draw(batteryData, batteryOptions);
+
+        document.getElementById("pressure_status_text").innerText = data.pressureState;
+        document.getElementById("ignition_status_text").innerText = data.ignitionState;
+        let runTimeMin = Math.trunc(data.runTimeMs / 60000);
+        document.getElementById("run_time_text").innerText = `${Math.trunc(runTimeMin / 60)}:${String(runTimeMin % 60).padStart(2, '0')}`;
       })
       .catch(err => { throw err });
   }, 1000);
