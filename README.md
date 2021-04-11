@@ -15,3 +15,9 @@ Monitor / shut off your dive compressor with an ESP32 board.
 - buttons for input, connectors, case.
 
 A detailed schematic will follow once I get around to it.
+
+## Update 11 April 2021
+
+I have now added web monitoring: Add your WiFi SSID / password into src/config.h, and the monitor will connect to the wireless network on startup. Then enter the IP address displayed on the screen into your mobile / desktop browser, and the monitoring page will load:
+
+![Web Based Monitoring](assets/compressor_monitor_web.png)
