@@ -129,6 +129,7 @@ static const beeperSequence_t beeperSequencePurgeNeeded = {
 typedef enum {
     SERVER_STATE_WIFI_DISCONNECTED,
     SERVER_STATE_WIFI_CONNECTED,
+    SERVER_STATE_WIFI_SET_IP,
     SERVER_STATE_STARTING,
     SERVER_STATE_RUNNING,
 } serverState_t;
@@ -691,9 +692,13 @@ void handleGetData(void)
 void updateWebServer(void)
 {
     static uint64_t delayUntilMs = 0;
+#if !defined(WIFI_ACCESSPOINT)
     static int wifiStatus = WL_IDLE_STATUS;
+#endif
 
     uint64_t nowMs = millis();
+
+#if !defined(WIFI_ACCESSPOINT)
     wifiStatus = WiFi.status();
     if (wifiStatus != WL_CONNECTED) {
         state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
@@ -703,6 +708,7 @@ void updateWebServer(void)
             delayUntilMs = 0;
         }
     }
+#endif
 
     if (nowMs < delayUntilMs) {
         return;
@@ -710,10 +716,36 @@ void updateWebServer(void)
 
     switch (state.serverState) {
     case SERVER_STATE_WIFI_DISCONNECTED:
+#if !defined(WIFI_ACCESSPOINT)
+// AP mode does not work currently, as this prevents the web client libraries that are used for the web frontend from being loaded from the internet.
+#if defined(WIFI_PASSWORD)
         wifiStatus = WiFi.begin((char *)WIFI_SSID, (char *)WIFI_PASSWORD);
-           delayUntilMs = nowMs + 10000; // wait for WiFi to connect
+#else
+        wifiStatus = WiFi.begin((char *)WIFI_SSID);
+#endif
+        delayUntilMs = nowMs + 10000; // wait for WiFi to connect
 
         break;
+#else
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
+
+        delayUntilMs = nowMs + 1000; // wait for WiFi to start
+        state.serverState = SERVER_STATE_WIFI_SET_IP;
+
+        break;
+    case SERVER_STATE_WIFI_SET_IP:
+        {
+            IPAddress ip(WIFI_AP_IP);
+            IPAddress netmask(WIFI_AP_NETMASK);
+            WiFi.softAPConfig(ip, ip, netmask);
+
+            delayUntilMs = nowMs + 1000; // wait for WiFi to start
+            state.serverState = SERVER_STATE_WIFI_CONNECTED;
+        }
+
+        break;
+#endif
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on(F("/api/getData"), handleGetData);
 
