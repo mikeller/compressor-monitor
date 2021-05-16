@@ -1,22 +1,35 @@
 <html>
   <head>
     <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen"/>
-    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
     <script type="text/javascript">
-      setTimeout(function() {
-        let script = document.createElement('script');
-        script.src = "fetch_data.js";
-        script.setAttribute('async', 'true');
-        document.documentElement.firstChild.appendChild(script);
-      }, 1000);
+      let scripts = ['gauge.min.js', 'fetch_data.js'];
+      const delayMs = 500;
+
+      function loadScript(index) {
+        setTimeout(function() {
+          let script = document.createElement('script');
+          script.src = scripts[index++];
+          script.setAttribute('async', 'true');
+          document.documentElement.firstChild.appendChild(script);
+
+          if (index < scripts.length) {
+            loadScript(index);
+          }
+        }, 500);
+      }
+
+      loadScript(0);
     </script>
   </head>
   <body>
     <div class="box">
-      <div id="pressure_chart_div"></div>
+      <canvas id="pressure_chart"></canvas>
+      <canvas id="pressure_chart"></canvas>
     </div>
     <div class="main_bar">
-      <div class="chart" id="purge_chart_div"></div>
+      <div class="chart">
+        <canvas id="purge_chart"></canvas>
+      </div>
       <div class="text_box">
         <div class="data_heading">Pressure Status:</div>
         <div class="data_text" id="pressure_status_text"></div>
@@ -27,8 +40,12 @@
       </div>
     </div>
     <div class="main_bar">
-      <div class="chart" id="battery_chart_div"></div>
-      <div class="chart" id="override_chart_div"></div>
+      <div class="chart">
+        <canvas id="battery_chart"></canvas>
+      </div>
+      <div class="chart">
+        <canvas id="override_chart"></canvas>
+      </div>
     </div>
   </body>
 </html>
