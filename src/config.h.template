@@ -4,6 +4,10 @@
 
 #define WIFI_SSID "MyNetwork"
 #define WIFI_PASSWORD "secret123"
+// Enable to set up as an access point
+//#define WIFI_ACCESSPOINT
+#define WIFI_AP_IP 192, 168, 15, 247
+#define WIFI_AP_NETMASK 255, 255, 255, 0
 
 #define PRESSURE_APPROACHING_THRESHOLD_BAR 10
 #define PRESSURE_STOP_THRESHOLD_BAR 10

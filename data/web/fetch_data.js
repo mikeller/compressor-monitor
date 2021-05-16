@@ -2,100 +2,126 @@
 
 const url = '/api/getData';
 
-google.charts.load('current', {'packages':['gauge']});
-google.charts.setOnLoadCallback(drawChart);
+let fillPressure = 200;
 
-function drawChart() {
-  let pressureData = google.visualization.arrayToDataTable([
-    ['Label', 'Value'],
-    ['Pressure [Bar]', 0],
-  ]);
-
-  let pressureOptions = {
-    max: 250,
-    redFrom: 200, redTo: 250,
-    yellowFrom: 190, yellowTo: 200,
-    minorTicks: 10,
-  };
-
-  let pressureChart = new google.visualization.Gauge(document.getElementById('pressure_chart_div'));
-
-  pressureChart.draw(pressureData, pressureOptions);
-
-  let overrideData = google.visualization.arrayToDataTable([
-    ['Label', 'Value'],
-    ['Override [s]', 61],
-  ]);
-
-  let overrideOptions = {
-    max: 61,
-    redFrom: 0, redTo: 10,
-    yellowFrom: 10, yellowTo: 60,
-    minorTicks: 1,
-  };
-
-  let overrideChart = new google.visualization.Gauge(document.getElementById('override_chart_div'));
-
-  overrideChart.draw(overrideData, overrideOptions);
-
-  let purgeData = google.visualization.arrayToDataTable([
-    ['Label', 'Value'],
-    ['Purge Due [min]', 0],
-  ]);
-
-  let purgeOptions = {
-    min: -10, max: 15,
-    redFrom: -10, redTo: 0,
-    yellowFrom: 0, yellowTo: 1,
-    minorTicks: 1,
-  };
-
-  let purgeChart = new google.visualization.Gauge(document.getElementById('purge_chart_div'));
-
-  purgeChart.draw(purgeData, purgeOptions);
-
-  let batteryData = google.visualization.arrayToDataTable([
-    ['Label', 'Value'],
-    ['Voltage', 0],
-  ]);
-
-  let batteryOptions = {
-    max: 20,
-    redFrom: 0, redTo: 9,
-    yellowFrom: 9, yellowTo: 10.5,
-    minorTicks: 1,
-  };
-
-  let batteryChart = new google.visualization.Gauge(document.getElementById('battery_chart_div'));
-
-  batteryChart.draw(batteryData, batteryOptions);
-
-  setInterval(function() {
-    fetch(url)
-      .then(result => result.json())
-      .then((data) => {
-        pressureData.setValue(0, 1, data.pressureBar);
-        if (pressureOptions.redFrom !== data.pressureLimitBar) {
-          pressureOptions.redFrom = data.pressureLimitBar;
-          pressureOptions.yellowTo = data.pressureLimitBar;
-          pressureOptions.yellowFrom = data.pressureLimitBar - 10;
+function getPressureHighlights () {
+    return [
+        {
+            from: fillPressure,
+            to: 250,
+            color: 'red',
+        }, {
+            from: fillPressure - 10,
+            to: fillPressure,
+            color: 'yellow',
         }
-        pressureChart.draw(pressureData, pressureOptions);
-
-        purgeData.setValue(0, 1, data.timeUntilPurgeMs / 60000);
-        purgeChart.draw(purgeData, purgeOptions);
-
-        overrideData.setValue(0, 1, data.overrideCountdownDurationMs ? (60 - data.overrideCountdownDurationMs / 1000) : 61);
-        overrideChart.draw(overrideData, overrideOptions);
-
-        batteryData.setValue(0, 1, data.batteryV);
-        batteryChart.draw(batteryData, batteryOptions);
-
-        document.getElementById("pressure_status_text").innerText = data.pressureState;
-        document.getElementById("ignition_status_text").innerText = data.ignitionState;
-        let runTimeMin = Math.trunc(data.runTimeMs / 60000);
-        document.getElementById("run_time_text").innerText = `${Math.trunc(runTimeMin / 60)}:${String(runTimeMin % 60).padStart(2, '0')}`;
-      })
-      .catch(err => { throw err });
-  }, 1000);
+    ];
 }
+
+let pressureGauge = new RadialGauge({
+    renderTo: 'pressure_chart',
+    maxValue: 250,
+    majorTicks: [0, 50, 100, 150, 200, 250],
+    minorTicks: 5,
+    units: "bar",
+    title: "Pressure",
+    highlights: getPressureHighlights(),
+});
+pressureGauge.draw();
+
+let purgeGauge = new RadialGauge({
+    renderTo: 'purge_chart',
+    minValue: -10,
+    maxValue: 15,
+    majorTicks: [-10, 5, 0, 5, 10, 15],
+    minorTicks: 5,
+    units: "min",
+    title: "Purge Due In",
+    highlights: [
+        {
+            from: -10,
+            to: 0,
+            color: 'red',
+        }, {
+            from: 0,
+            to: 1,
+            color: 'yellow',
+        }
+    ],
+});
+purgeGauge.draw();
+
+let batteryGauge = new RadialGauge({
+    renderTo: 'battery_chart',
+    maxValue: 20,
+    majorTicks: [0, 5, 10, 15, 20],
+    minorTicks: 5,
+    units: "V",
+    title: "Supply Voltage",
+    highlights: [
+        {
+            from: 0,
+            to: 9,
+            color: 'red',
+        }, {
+            from: 9,
+            to: 10.5,
+            color: 'yellow',
+        }
+    ],
+});
+batteryGauge.draw();
+
+let overrideGauge = new RadialGauge({
+    renderTo: 'override_chart',
+    maxValue: 60,
+    majorTicks: [0, 10, 20, 30, 40, 50, 60],
+    minorTicks: 10,
+    units: "sec",
+    title: "Override",
+    highlights: [
+        {
+            from: 0,
+            to: 10,
+            color: 'red',
+        }, {
+            from: 10,
+            to: 60,
+            color: 'yellow',
+        }
+    ],
+});
+overrideGauge.draw();
+
+setInterval(function() {
+    fetch(url)
+        .then(result => result.json())
+        .then((data) => {
+            let pressureOptions = {
+                value: data.pressureBar,
+            };
+            if (fillPressure !== data.pressureLimitBar) {
+                fillPressure = data.pressureLimitBar;
+                pressureOptions.highlights = getPressureHighlights();
+            }
+            pressureGauge.update(pressureOptions);
+
+            purgeGauge.update({ value: data.timeUntilPurgeMs / 60000, });
+
+            let overrideDurationS = data.overrideCountdownDurationMs / 1000;
+            if (overrideDurationS) {
+                document.getElementById("override_chart").style.visibility = "visible";
+            } else {
+                document.getElementById("override_chart").style.visibility = "hidden";
+            }
+            overrideGauge.update({ value: 60 - overrideDurationS, });
+
+            batteryGauge.update({ value: data.batteryV, });
+
+            document.getElementById("pressure_status_text").innerText = data.pressureState;
+            document.getElementById("ignition_status_text").innerText = data.ignitionState;
+            let runTimeMin = Math.trunc(data.runTimeMs / 60000);
+            document.getElementById("run_time_text").innerText = `${Math.trunc(runTimeMin / 60)}:${String(runTimeMin % 60).padStart(2, '0')}`;
+        })
+    .catch(err => { throw err });
+}, 1000);

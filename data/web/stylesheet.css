@@ -1,9 +1,9 @@
 :root {
-	font-family: arial,sans-serif;
+	font-family: arial, sans-serif;
 	font-size: 18px;
 }
 
-#pressure_chart_div {
+.box {
 	width: 400px;
 	height: 400px;
 }
@@ -39,7 +39,7 @@
 	    font-size: 36px;
     }
 
-    #pressure_chart_div {
+    .box {
 	    width: 800px;
 	    height: 800px;
     }

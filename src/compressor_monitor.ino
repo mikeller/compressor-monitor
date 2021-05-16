@@ -42,11 +42,11 @@ typedef enum {
     IGNITION_STATE_COUNT
 } ignitionState_t;
 
-static const char *ignitionStateNames[] = { "OFF", "ON", "CONFIRM" };
+const char *ignitionStateNames[] = { "OFF", "ON", "CONFIRM" };
 
-static const uint16_t ignitionStateColours[] = { TFT_RED, TFT_GREEN, TFT_YELLOW };
+const uint16_t ignitionStateColours[] = { TFT_RED, TFT_GREEN, TFT_YELLOW };
 
-static const beeperSequence_t beeperSequenceIgnitionOff = {
+const beeperSequence_t beeperSequenceIgnitionOff = {
     .period = 15,
     .offset = 0,
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
@@ -60,11 +60,11 @@ typedef enum {
     PRESSURE_STATE_COUNT
 } pressureState_t;
 
-static const char *pressureStateNames[] = { "FILL", "CLOSE", "OVER", "STOP" };
+const char *pressureStateNames[] = { "FILL", "CLOSE", "OVER", "STOP" };
 
-static const uint16_t pressureStateColours[] = { TFT_GREEN, TFT_YELLOW, ORANGE, TFT_RED };
+const uint16_t pressureStateColours[] = { TFT_GREEN, TFT_YELLOW, ORANGE, TFT_RED };
 
-static const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT] = {
+const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT] = {
     {
         .period = 1,
         .offset = 0,
@@ -90,9 +90,9 @@ typedef enum {
     BATTERY_STATE_COUNT
 } batteryState_t;
 
-static const uint16_t batteryStateColours[] = { TFT_GREEN, TFT_RED };
+const uint16_t batteryStateColours[] = { TFT_GREEN, TFT_RED };
 
-static const beeperSequence_t beeperSequenceBatteryLow = {
+const beeperSequence_t beeperSequenceBatteryLow = {
     .period = 15,
     .offset = 5,
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1 },
@@ -106,21 +106,21 @@ typedef enum {
     INPUT_STATE_COUNT
 } inputState_t;
 
-static const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERR", "PURGE" };
+const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERR", "PURGE" };
 
-static const beeperSequence_t beeperSequenceOverrideActive = {
+const beeperSequence_t beeperSequenceOverrideActive = {
     .period = 1,
     .offset = 0,
     .sequence = { 1, 1, 1, 1, 1 },
 };
 
-static const beeperSequence_t beeperSequenceOverrideEnding = {
+const beeperSequence_t beeperSequenceOverrideEnding = {
     .period = 1,
     .offset = 0,
     .sequence = { 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
 };
 
-static const beeperSequence_t beeperSequencePurgeNeeded = {
+const beeperSequence_t beeperSequencePurgeNeeded = {
     .period = 15,
     .offset = 10,
     .sequence = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1 },
@@ -129,13 +129,14 @@ static const beeperSequence_t beeperSequencePurgeNeeded = {
 typedef enum {
     SERVER_STATE_WIFI_DISCONNECTED,
     SERVER_STATE_WIFI_CONNECTED,
+    SERVER_STATE_WIFI_SET_IP,
     SERVER_STATE_STARTING,
     SERVER_STATE_RUNNING,
 } serverState_t;
 
-static const uint16_t serverStateColours[] = { TFT_RED, TFT_ORANGE, TFT_YELLOW, TFT_GREEN };
+const uint16_t serverStateColours[] = { TFT_RED, TFT_ORANGE, TFT_YELLOW, TFT_GREEN };
 
-static const char *serverStateNames[] = { "SEARCH", "CONN", "START", "RUNN" };
+const char *serverStateNames[] = { "SEARCH", "CONN", "START", "RUNN" };
 
 typedef struct globalState_s {
     float pressureBar;
@@ -154,6 +155,17 @@ typedef struct globalState_s {
 } globalState_t;
 
 globalState_t state;
+
+const char *webResources[] = {
+    "stylesheet.css",
+    "gauge.min.js",
+    "fetch_data.js",
+    "favicon.ico",
+};
+
+#if defined(WIFI_ACCESSPOINT)
+const IPAddress apIp(WIFI_AP_IP);
+#endif
 
 TFT_eSPI tft = TFT_eSPI(240, 320);
 
@@ -619,8 +631,12 @@ Right column:
         if (state.serverState < SERVER_STATE_WIFI_CONNECTED) {
             tft.print(serverStateNames[state.serverState]);
         } else {
+#if !defined(WIFI_ACCESSPOINT)
             IPAddress ip = WiFi.localIP();
             tft.print(ip);
+#else
+            tft.print(apIp);
+#endif
         }
 #endif
 
@@ -691,9 +707,13 @@ void handleGetData(void)
 void updateWebServer(void)
 {
     static uint64_t delayUntilMs = 0;
+#if !defined(WIFI_ACCESSPOINT)
     static int wifiStatus = WL_IDLE_STATUS;
+#endif
 
     uint64_t nowMs = millis();
+
+#if !defined(WIFI_ACCESSPOINT)
     wifiStatus = WiFi.status();
     if (wifiStatus != WL_CONNECTED) {
         state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
@@ -703,6 +723,7 @@ void updateWebServer(void)
             delayUntilMs = 0;
         }
     }
+#endif
 
     if (nowMs < delayUntilMs) {
         return;
@@ -710,17 +731,46 @@ void updateWebServer(void)
 
     switch (state.serverState) {
     case SERVER_STATE_WIFI_DISCONNECTED:
+#if !defined(WIFI_ACCESSPOINT)
+// AP mode does not work currently, as this prevents the web client libraries that are used for the web frontend from being loaded from the internet.
+#if defined(WIFI_PASSWORD)
         wifiStatus = WiFi.begin((char *)WIFI_SSID, (char *)WIFI_PASSWORD);
-           delayUntilMs = nowMs + 10000; // wait for WiFi to connect
+#else
+        wifiStatus = WiFi.begin((char *)WIFI_SSID);
+#endif
+        delayUntilMs = nowMs + 10000; // wait for WiFi to connect
 
         break;
+#else
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
+
+        delayUntilMs = nowMs + 1000; // wait for WiFi to start
+        state.serverState = SERVER_STATE_WIFI_SET_IP;
+
+        break;
+    case SERVER_STATE_WIFI_SET_IP:
+        {
+            IPAddress netmask(WIFI_AP_NETMASK);
+            WiFi.softAPConfig(apIp, apIp, netmask);
+
+            delayUntilMs = nowMs + 1000; // wait for WiFi to start
+            state.serverState = SERVER_STATE_WIFI_CONNECTED;
+        }
+
+        break;
+#endif
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on(F("/api/getData"), handleGetData);
 
         webServer.serveStatic("/", SPIFFS, "/web/index.html");
-        webServer.serveStatic("/stylesheet.css", SPIFFS, "/web/stylesheet.css");
-        webServer.serveStatic("/fetch_data.js", SPIFFS, "/web/fetch_data.js");
-        webServer.serveStatic("/favicon.ico", SPIFFS, "/web/favicon.ico");
+
+        for (unsigned i = 0; i < sizeof(webResources) / sizeof(char *); i++) {
+            char urlBuffer[64] = "/";
+            char fileBuffer[64] = "/web/";
+
+            webServer.serveStatic(strcat(urlBuffer, webResources[i]), SPIFFS, strcat(fileBuffer, webResources[i]));
+        }
 
         webServer.begin();
         state.serverState = SERVER_STATE_STARTING;
