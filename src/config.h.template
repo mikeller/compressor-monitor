@@ -2,10 +2,11 @@
  * Configuration settings. Copy into 'config.h' and customise
  */
 
-#define WIFI_SSID "MyNetwork"
-#define WIFI_PASSWORD "secret123"
-// Enable to set up as an access point
-//#define WIFI_ACCESSPOINT
+#define WIFI_CLIENT_SSID "MyNetwork"
+#define WIFI_CLIENT_PASSWORD "secret123"
+
+#define WIFI_AP_SSID "CompressorMonitor"
+#define WIFI_AP_PASSWORD "brrr1234"
 #define WIFI_AP_IP 192, 168, 15, 247
 #define WIFI_AP_NETMASK 255, 255, 255, 0
 

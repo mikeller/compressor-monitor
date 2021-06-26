@@ -10,12 +10,35 @@
 
 #include "config.h"
 
-#if defined(WIFI_SSID)
+#if defined(WIFI_CLIENT_SSID) || defined(WIFI_AP_SSID)
+#define USE_WIFI
+
 #include <WiFi.h>
 #include <SPIFFS.h>
 #include <WebServer.h>
 #define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
+
+#if defined(WIFI_CLIENT_SSID) && !defined(WIFI_CLIENT_PASSWORD)
+#define WIFI_CLIENT_PASSWORD NULL
+#endif
+
+#if defined(WIFI_AP_SSID)
+#if !defined(WIFI_AP_PASSWORD)
+#define WIFI_AP_PASSWORD NULL
+#endif
+
+#if !defined(WIFI_AP_IP)
+#define WIFI_AP_IP 192, 168, 16, 1
+#endif
+const IPAddress apIp(WIFI_AP_IP);
+
+#if !defined(WIFI_AP_NETMASK)
+#define WIFI_AP_NETMASK 255, 255, 255, 0
+#endif
+#endif
+
+WebServer webServer(80);
 #endif
 
 
@@ -128,15 +151,24 @@ const beeperSequence_t beeperSequencePurgeNeeded = {
 
 typedef enum {
     SERVER_STATE_WIFI_DISCONNECTED,
+    SERVER_STATE_WIFI_CONNECTING,
     SERVER_STATE_WIFI_CONNECTED,
-    SERVER_STATE_WIFI_SET_IP,
+    SERVER_STATE_WIFI_AP_SET_IP,
     SERVER_STATE_STARTING,
     SERVER_STATE_RUNNING,
 } serverState_t;
 
-const uint16_t serverStateColours[] = { TFT_RED, TFT_ORANGE, TFT_YELLOW, TFT_GREEN };
+const uint16_t serverStateColours[] = { TFT_RED, TFT_ORANGE, TFT_YELLOW, TFT_YELLOW, TFT_YELLOW, TFT_GREEN };
 
-const char *serverStateNames[] = { "SEARCH", "CONN", "START", "RUNN" };
+const char *serverStateNames[] = { "DIS", "CONN", "CTD", "IP", "START", "RUN" };
+
+typedef enum {
+    SERVER_TYPE_NONE,
+    SERVER_TYPE_CLIENT,
+    SERVER_TYPE_AP,
+} serverType_t;
+
+const char *serverTypeNames[] = { "?", "C", "A" };
 
 typedef struct globalState_s {
     float pressureBar;
@@ -152,6 +184,7 @@ typedef struct globalState_s {
     uint64_t nextButtonRepeatEventMs;
     Button2 *repeatEventButton;
     serverState_t serverState;
+    serverType_t serverType;
 } globalState_t;
 
 globalState_t state;
@@ -163,10 +196,6 @@ const char *webResources[] = {
     "favicon.ico",
 };
 
-#if defined(WIFI_ACCESSPOINT)
-const IPAddress apIp(WIFI_AP_IP);
-#endif
-
 TFT_eSPI tft = TFT_eSPI(240, 320);
 
 Button2 buttonUp(BUTTON_UP_PIN);
@@ -174,10 +203,6 @@ Button2 buttonDown(BUTTON_DOWN_PIN);
 Button2 buttonCycle(BUTTON_CYCLE_PIN);
 
 esp_adc_cal_characteristics_t adc_chars;
-
-#if defined(WIFI_SSID)
-WebServer webServer(80);
-#endif
 
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
 // Unfortunately this does not work with WiFi
@@ -350,6 +375,9 @@ void setup(void)
     setupAdc();
 
     state.pressureLimitBar = DEFAULT_PRESSURE_LIMIT_BAR;
+
+    state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
+    state.serverType = SERVER_TYPE_NONE;
 
     setupDisplay();
 
@@ -569,6 +597,8 @@ Right column:
 #define COL_HEADING_2 170
 #define COL_2 198
 
+#define IP_SIZE 15
+
     static uint64_t lastRunTimeMs = 0;
     
     uint64_t nowMs = millis();
@@ -623,20 +653,32 @@ Right column:
         tft.setCursor(COL_1, ROW_4);
         tft.printf("%.2f V", state.batteryV);
 
-#if defined(WIFI_SSID)
+#if defined(USE_WIFI)
         tft.setTextColor(serverStateColours[state.serverState]);
         tft.setCursor(COL_HEADING_1, ROW_5);
         tft.print("W:");
         tft.setCursor(COL_1, ROW_5);
         if (state.serverState < SERVER_STATE_WIFI_CONNECTED) {
-            tft.print(serverStateNames[state.serverState]);
+            tft.printf("%s:%s", serverTypeNames[state.serverType], serverStateNames[state.serverState]);
         } else {
-#if !defined(WIFI_ACCESSPOINT)
-            IPAddress ip = WiFi.localIP();
-            tft.print(ip);
-#else
-            tft.print(apIp);
+            char ip[IP_SIZE] = "\0";
+            switch (state.serverType) {
+#if defined(WIFI_CLIENT_SSID)
+            case SERVER_TYPE_CLIENT:
+                WiFi.localIP().toString().toCharArray(ip, IP_SIZE);
+
+                break;
 #endif
+#if defined(WIFI_AP_SSID)
+            case SERVER_TYPE_AP:
+                apIp.toString().toCharArray(ip, IP_SIZE);
+
+                break;
+#endif
+            default:
+                break;
+            }
+            tft.printf("%s:%s", serverTypeNames[state.serverType], ip);
         }
 #endif
 
@@ -675,7 +717,7 @@ void updateButtons(void)
     buttonCycle.loop();
 }
 
-#if defined(WIFI_SSID)
+#if defined(USE_WIFI)
 
 #define DATA_BUFFER_SIZE 512
 
@@ -707,23 +749,30 @@ void handleGetData(void)
 void updateWebServer(void)
 {
     static uint64_t delayUntilMs = 0;
-#if !defined(WIFI_ACCESSPOINT)
-    static int wifiStatus = WL_IDLE_STATUS;
-#endif
 
     uint64_t nowMs = millis();
 
-#if !defined(WIFI_ACCESSPOINT)
-    wifiStatus = WiFi.status();
-    if (wifiStatus != WL_CONNECTED) {
-        state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
-    } else {
-        if (state.serverState == SERVER_STATE_WIFI_DISCONNECTED) {
-            state.serverState = SERVER_STATE_WIFI_CONNECTED;
+    if (state.serverType != SERVER_TYPE_AP) {
+        int wifiStatus = WiFi.status();
+        switch (wifiStatus) {
+        case WL_CONNECTED:
+            if (state.serverState == SERVER_STATE_WIFI_CONNECTING) {
+                state.serverState = SERVER_STATE_WIFI_CONNECTED;
+                state.serverType = SERVER_TYPE_CLIENT;
+                delayUntilMs = 0;
+            }
+
+            break;
+        case WL_CONNECT_FAILED:
+        case WL_NO_SSID_AVAIL:
             delayUntilMs = 0;
+
+            break;
+        default:
+
+            break;
         }
     }
-#endif
 
     if (nowMs < delayUntilMs) {
         return;
@@ -731,25 +780,27 @@ void updateWebServer(void)
 
     switch (state.serverState) {
     case SERVER_STATE_WIFI_DISCONNECTED:
-#if !defined(WIFI_ACCESSPOINT)
-// AP mode does not work currently, as this prevents the web client libraries that are used for the web frontend from being loaded from the internet.
-#if defined(WIFI_PASSWORD)
-        wifiStatus = WiFi.begin((char *)WIFI_SSID, (char *)WIFI_PASSWORD);
-#else
-        wifiStatus = WiFi.begin((char *)WIFI_SSID);
+#if defined(WIFI_CLIENT_SSID)
+        WiFi.begin((char *)WIFI_CLIENT_SSID, (char *)WIFI_CLIENT_PASSWORD);
+        delayUntilMs = nowMs + 60000; // wait for WiFi to connect
+        state.serverState = SERVER_STATE_WIFI_CONNECTING;
+
+        break;
+    case SERVER_STATE_WIFI_CONNECTING:
 #endif
-        delayUntilMs = nowMs + 10000; // wait for WiFi to connect
+        state.serverState = SERVER_STATE_WIFI_DISCONNECTED;
+#if defined(WIFI_AP_SSID)
+        if (state.serverType != SERVER_TYPE_CLIENT) {
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+            state.serverType = SERVER_TYPE_AP;
+
+            delayUntilMs = nowMs + 1000; // wait for WiFi to start
+            state.serverState = SERVER_STATE_WIFI_AP_SET_IP;
+        }
 
         break;
-#else
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
-
-        delayUntilMs = nowMs + 1000; // wait for WiFi to start
-        state.serverState = SERVER_STATE_WIFI_SET_IP;
-
-        break;
-    case SERVER_STATE_WIFI_SET_IP:
+    case SERVER_STATE_WIFI_AP_SET_IP:
         {
             IPAddress netmask(WIFI_AP_NETMASK);
             WiFi.softAPConfig(apIp, apIp, netmask);
@@ -757,9 +808,9 @@ void updateWebServer(void)
             delayUntilMs = nowMs + 1000; // wait for WiFi to start
             state.serverState = SERVER_STATE_WIFI_CONNECTED;
         }
+#endif
 
         break;
-#endif
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on(F("/api/getData"), handleGetData);
 
@@ -803,7 +854,7 @@ void loop(void)
 
     updateButtons();
 
-#if defined(WIFI_SSID)
+#if defined(USE_WIFI)
     updateWebServer();
 #endif
 
