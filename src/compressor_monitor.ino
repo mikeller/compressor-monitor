@@ -79,13 +79,29 @@ typedef enum {
     PRESSURE_STATE_FILLING = 0,
     PRESSURE_STATE_APPROACHING,
     PRESSURE_STATE_OVER,
+#if defined(HAS_SWITCH)
     PRESSURE_STATE_SAFETY_STOPPED,
+#endif
     PRESSURE_STATE_COUNT
 } pressureState_t;
 
-const char *pressureStateNames[] = { "FILL", "CLOSE", "OVER", "STOP" };
+const char *pressureStateNames[] = {
+    "FILL",
+    "CLOSE",
+    "OVER",
+#if defined(HAS_SWITCH)
+    "STOP",
+#endif
+};
 
-const uint16_t pressureStateColours[] = { TFT_GREEN, TFT_YELLOW, ORANGE, TFT_RED };
+const uint16_t pressureStateColours[] = {
+    TFT_GREEN,
+    TFT_YELLOW,
+    ORANGE,
+#if defined(HAS_SWITCH)
+    TFT_RED,
+#endif
+};
 
 const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT] = {
     {
@@ -100,10 +116,12 @@ const beeperSequence_t pressureStateBeeperSequences[PRESSURE_STATE_COUNT] = {
         .period = 1,
         .offset = 0,
         .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+#if defined(HAS_SWITCH)
     }, {
         .period = 3,
         .offset = 0,
         .sequence = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+#endif
     },
 };
 
@@ -124,12 +142,21 @@ const beeperSequence_t beeperSequenceBatteryLow = {
 typedef enum {
     INPUT_STATE_PRESSURE_LIMIT = 0,
     INPUT_STATE_IGNITION,
+#if defined(HAS_SWITCH)
     INPUT_STATE_OVERRIDE,
+#endif
     INPUT_STATE_PURGE,
     INPUT_STATE_COUNT
 } inputState_t;
 
-const char *inputStateNames[] = { "LIMIT", "IGNITION", "OVERR", "PURGE" };
+const char *inputStateNames[] = {
+    "LIMIT",
+    "IGNITION",
+#if defined(HAS_SWITCH)
+    "OVERR",
+#endif
+    "PURGE",
+};
 
 const beeperSequence_t beeperSequenceOverrideActive = {
     .period = 1,
@@ -173,7 +200,9 @@ const char *serverTypeNames[] = { "?", "C", "A" };
 typedef struct globalState_s {
     float pressureBar;
     float batteryV;
+#if defined(HAS_SWITCH)
     uint64_t overrideCountdownStartedMs;
+#endif
     uint8_t pressureLimitBar;
     ignitionState_t ignitionState;
     pressureState_t pressureState;
@@ -247,6 +276,7 @@ void handleUpDownButtonPressed(Button2 &button)
         }
 
         break;
+#if defined(HAS_SWITCH)
     case INPUT_STATE_OVERRIDE:
         if (button == buttonUp) {
             state.overrideCountdownStartedMs = millis();
@@ -257,6 +287,7 @@ void handleUpDownButtonPressed(Button2 &button)
         }
 
         break;
+#endif
     case INPUT_STATE_PURGE:
         if (button == buttonUp) {
             state.lastPurgeRunTimeMs = state.runTimeMs;
@@ -433,7 +464,9 @@ void updateState(void)
 {
     static uint64_t lastRunTimeUpdateMs;
     static bool lastDumpNeededState;
+#if defined(HAS_SWITCH)
     static pressureState_t lastPressureState;
+#endif
 
     uint64_t nowMs = millis();
 
@@ -458,26 +491,34 @@ void updateState(void)
         lastDumpNeededState = false;
     }
 
+#if defined(HAS_SWITCH)
     if (state.pressureBar >= state.pressureLimitBar + PRESSURE_STOP_THRESHOLD_BAR && !state.overrideCountdownStartedMs) {
         state.pressureState = PRESSURE_STATE_SAFETY_STOPPED;
         state.ignitionState = IGNITION_STATE_OFF;
         if (lastPressureState != state.pressureState) {
             state.inputState = INPUT_STATE_IGNITION;
         }
-    } else if (state.pressureBar >= state.pressureLimitBar) {
+    } else
+#endif
+    if (state.pressureBar >= state.pressureLimitBar) {
         state.pressureState = PRESSURE_STATE_OVER;
+#if defined(HAS_SWITCH)
         if (lastPressureState != state.pressureState) {
             state.inputState = INPUT_STATE_OVERRIDE;
         }
+#endif
     } else if (state.pressureBar >= state.pressureLimitBar - PRESSURE_APPROACHING_THRESHOLD_BAR) {
         state.pressureState = PRESSURE_STATE_APPROACHING;
+#if defined(HAS_SWITCH)
         if (lastPressureState != state.pressureState) {
             state.inputState = INPUT_STATE_OVERRIDE;
         }
+#endif
     } else {
         state.pressureState = PRESSURE_STATE_FILLING;
     }
 
+#if defined(HAS_SWITCH)
     if (state.overrideCountdownStartedMs) {
         if (state.ignitionState == IGNITION_STATE_OFF) {
             state.overrideCountdownStartedMs = 0;
@@ -487,6 +528,7 @@ void updateState(void)
             }
         }
     }
+#endif
 
     if (state.batteryV <= BATTERY_LOW_LIMIT_V) {
         state.batteryState = BATTERY_STATE_LOW;
@@ -494,11 +536,13 @@ void updateState(void)
         state.batteryState = BATTERY_STATE_OK;
     }
 
+#if defined(HAS_SWITCH)
     lastPressureState = state.pressureState;
 
     if (timeUntilPurgeMs <= -1000 * PURGE_GRACE_TIME_S) {
         state.ignitionState = IGNITION_STATE_OFF;
     }
+#endif
 
     if (state.nextButtonRepeatEventMs && state.nextButtonRepeatEventMs <= nowMs) {
         if (state.inputState == INPUT_STATE_PRESSURE_LIMIT) {
@@ -509,10 +553,12 @@ void updateState(void)
     }
 }
 
+#if defined(HAS_SWITCH)
 void updateOutput(void)
 {
     digitalWrite(RELAIS_1_PIN, !state.ignitionState);
 }
+#endif
 
 bool needsBeeperOn(beeperSequence_t sequence, uint32_t period, uint8_t position)
 {
@@ -538,7 +584,16 @@ void updateBeeper(void)
 
         bool beeperOn = false;
 
+#if defined(HAS_SWITCH)
         if (!state.overrideCountdownStartedMs) {
+            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
+            } else {
+                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideActive, period, position);
+            }
+        } else
+#endif
+        {
             if (state.ignitionState == IGNITION_STATE_OFF) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceIgnitionOff, period, position);
             }
@@ -552,13 +607,6 @@ void updateBeeper(void)
             }
 
             beeperOn = beeperOn || needsBeeperOn(pressureStateBeeperSequences[state.pressureState], period, position);
-
-        } else {
-            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
-                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
-            } else {
-                beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideActive, period, position);
-            }
         }
 
         digitalWrite(BEEPER_PIN, beeperOn);
@@ -629,21 +677,27 @@ Right column:
         tft.setCursor(COL_1, ROW_2);
         tft.printf("%d bar", state.pressureLimitBar);
 
+#if defined(HAS_SWITCH)
         if (state.overrideCountdownStartedMs) {
             if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
                 tft.setTextColor(TFT_RED);
             } else {
                 tft.setTextColor(TFT_YELLOW);
             }
-        } else {
+        } else
+#endif
+        {
             tft.setTextColor(ignitionStateColours[state.ignitionState]);
         }
         tft.setCursor(COL_HEADING_1, ROW_3);
         tft.print("I:");
         tft.setCursor(COL_1, ROW_3);
+#if defined(HAS_SWITCH)
         if (state.overrideCountdownStartedMs) {
             tft.printf("%d s", (int)((state.overrideCountdownStartedMs + 1000 * OVERRIDE_DURATION_S - nowMs) / 1000));
-        } else {
+        } else
+#endif
+        {
             tft.printf(ignitionStateNames[state.ignitionState]);
         }
 
@@ -729,7 +783,11 @@ String getDataJson(void)
     data["pressureLimitBar"] = state.pressureLimitBar;
     data["pressureState"] = pressureStateNames[state.pressureState];
     data["ignitionState"] = ignitionStateNames[state.ignitionState];
+#if defined(HAS_SWITCH)
     data["overrideCountdownDurationMs"] = state.overrideCountdownStartedMs ? millis() - state.overrideCountdownStartedMs : 0;
+#else
+    data["overrideCountdownDurationMs"] = 0;
+#endif
     data["runTimeMs"] = state.runTimeMs;
     data["timeUntilPurgeMs"] = getTimeUntilPurgeMs();
     data["batteryV"] = state.batteryV;
@@ -846,7 +904,9 @@ void loop(void)
 
     updateState();
 
+#if defined(HAS_SWITCH)
     updateOutput();
+#endif
 
     updateBeeper();
 
