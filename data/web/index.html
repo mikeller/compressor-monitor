@@ -1,8 +1,10 @@
+<!DOCTYPE html>
 <html>
   <head>
+    <link rel="manifest" href="manifest.json"/>
     <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen"/>
     <script type="text/javascript">
-      let scripts = ['gauge.min.js', 'fetch_data.js'];
+      let scripts = ['gauge.min.js', 'main.js'];
       const delayMs = 500;
 
       function loadScript(index) {
@@ -36,6 +38,8 @@
         <div class="data_text" id="ignition_status_text"></div>
         <div class="data_heading">Run time:</div>
         <div class="data_text" id="run_time_text"></div>
+        <div class="data_heading">Notifications:</div>
+        <div class="data_text" id="notifications_status_text"></div>
       </div>
     </div>
     <div class="main_bar">

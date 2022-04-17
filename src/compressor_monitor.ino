@@ -219,9 +219,13 @@ typedef struct globalState_s {
 globalState_t state;
 
 const char *webResources[] = {
+    "manifest.json",
+    "dive_tanks_512x512.png",
+    "dive_tanks_192x192.png",
     "stylesheet.css",
     "gauge.min.js",
-    "fetch_data.js",
+    "main.js",
+    "serviceworker.js",
     "favicon.ico",
 };
 
