@@ -1,6 +1,10 @@
 #include <stdio.h>
 
+// It's sad and regrettable (not to speak of risky) that we have to use this hack
+#define DISABLE_ALL_LIBRARY_WARNINGS
 #include <TFT_eSPI.h>
+#undef DISABLE_ALL_LIBRARY_WARNINGS
+
 #include <Button2.h>
 #include <esp_adc_cal.h>
 
