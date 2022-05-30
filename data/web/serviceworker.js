@@ -3,7 +3,7 @@
 const URL = '/api/getData';
 
 self.addEventListener("fetch", event => {
-    // default behaviour: request the network
+    // default behaviour: send the request
     event.respondWith(fetch(event.request));
 });
 
@@ -49,15 +49,15 @@ function checkShowNotification(data, intervalS) {
     }
 }
 
-let clients = [];
+let listeners = [];
 let lastNotificationMs = 0;
 
 function fetchData() {
 	return fetch(URL)
         .then(result => result.json())
-    	.then(data => {
-            clients.forEach(client => {
-                client.postMessage({
+        .then(data => {
+            listeners.forEach(listener => {
+                listener.postMessage({
                     type: `DATA`,
                     payload: data
                 });
@@ -70,17 +70,43 @@ function fetchData() {
             } else {
                 closeNotifications();
             }
-        });
+        })
+    .catch(error => {
+        console.error(`Problem fetching data: ${error}`);
+    });
 }
 
-let fetchInterval;
+let fetcherTask;
+let intervalMs = 5000;
 
-self.addEventListener("message", event => {
-    if (event.data && event.data.type === 'CONNECT') {
-        clients.push(event.source);
+function triggerFetcherTask() {
+    fetchData();
 
-        if (!fetchInterval) {
-            fetchInterval = setInterval(fetchData, 1000);
-        }
+    if (fetcherTask) {
+        clearInterval(fetcherTask);
     }
-});
+
+    fetcherTask = setInterval(fetchData, intervalMs);
+}
+
+
+function main() {
+    self.addEventListener("message", event => {
+        if (event.data) {
+            if (event.data.type === 'CONNECT') {
+                listeners.push(event.source);
+                intervalMs = event.data.intervalMs || intervalMs;
+
+                triggerFetcherTask();
+
+                console.log(`Service worker connected.`);
+            } else if (event.data.type === 'ACTIVATE') {
+                triggerFetcherTask();
+
+                console.log(`Service worker activated.`);
+            }
+        }
+    });
+}
+
+main();

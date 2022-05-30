@@ -1,6 +1,7 @@
 'use strict';
 
 const URL = '/api/getData';
+const intervalMs = 5000;
 
 var pressureGauge = new RadialGauge({
     renderTo: 'pressure_chart',
@@ -91,7 +92,9 @@ function fetchAndUpdate() {
     fetch(URL)
         .then(result => result.json())
         .then(data => updateDisplay(data))
-        .catch(err => { throw err });
+        .catch(err => {
+            throw err;
+        });
 }
 
 let oldPressureLimitBar = 0;
@@ -120,8 +123,8 @@ function updateDisplay(data) {
 
     document.getElementById("pressure_status_text").innerText = data.pressureState;
     document.getElementById("ignition_status_text").innerText = data.ignitionState;
-    let runTimeMin = Math.trunc(data.runTimeMs / 60000);
-    document.getElementById("run_time_text").innerText = `${Math.trunc(runTimeMin / 60)}:${String(runTimeMin % 60).padStart(2, '0')}`;
+    let runTimeCh = Math.trunc(data.runTimeMs / 1000 / 60 / 60 * 100);
+    document.getElementById("run_time_text").innerText = `${(runTimeCh / 100).toFixed(2)} h`;
 }
 
 function main() {
@@ -148,12 +151,22 @@ function main() {
                 // path to the service worker file
                 'serviceworker.js'
             )
-            // the registration is async and it returns a promise
-            .then(() => console.log('Registration Successful'));
+            .catch(error => {
+                console.error(`Problem registering service worker: ${error}`);
+            });
 
-        navigator.serviceWorker.ready.then((registration) => {
+        navigator.serviceWorker.ready.then(registration => {
             registration.active.postMessage({
                 type: 'CONNECT',
+                intervalMs: intervalMs,
+            });
+
+            document.addEventListener('visibilitychange', event => {
+                if (document.visibilityState === 'visible') {
+                    registration.active.postMessage({
+                        type: 'ACTIVATE',
+                    });
+                }
             });
 
             navigator.serviceWorker.onmessage = function (event) {
@@ -163,7 +176,7 @@ function main() {
             };
         });
     } else {
-        setInterval(fetchAndUpdate, 1000);
+        setInterval(fetchAndUpdate, intervalMs);
     }
 
     document.getElementById("notifications_status_text").innerText = useServiceWorker ? `ON` : `OFF`;
