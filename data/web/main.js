@@ -100,31 +100,66 @@ function fetchAndUpdate() {
 let oldPressureLimitBar = 0;
 
 function updateDisplay(data) {
-    let pressureOptions = {
-        value: data.pressureBar,
-    };
-    if (oldPressureLimitBar !== data.pressureLimitBar) {
-        pressureOptions.highlights = getPressureHighlights(data.pressureLimitBar);
-        oldPressureLimitBar = data.pressureLimitBar;
-    }
-    pressureGauge.update(pressureOptions);
+    if (data) {
+        let pressureOptions = {
+            value: data.pressureBar,
+        };
+        if (oldPressureLimitBar !== data.pressureLimitBar) {
+            pressureOptions.highlights = getPressureHighlights(data.pressureLimitBar);
+            oldPressureLimitBar = data.pressureLimitBar;
+        }
+        pressureGauge.update(pressureOptions);
 
-    purgeGauge.update({ value: data.timeUntilPurgeMs / 60000, });
+        purgeGauge.update({ value: data.timeUntilPurgeMs / 60000, });
 
-    let overrideDurationS = data.overrideCountdownDurationMs / 1000;
-    if (overrideDurationS) {
-        document.getElementById("override_chart").style.visibility = "visible";
+        let overrideDurationS = data.overrideCountdownDurationMs / 1000;
+        if (overrideDurationS) {
+            document.getElementById("override_chart").style.visibility = "visible";
+        } else {
+            document.getElementById("override_chart").style.visibility = "hidden";
+        }
+        overrideGauge.update({ value: 60 - overrideDurationS, });
+
+        batteryGauge.update({ value: data.batteryV, });
+
+        document.getElementById("pressure_status_text").innerText = data.pressureState;
+        document.getElementById("ignition_status_text").innerText = data.ignitionState;
+        let runTimeH = data.runTimeMs / 1000 / 60 / 60;
+        document.getElementById("run_time_text").innerText = `${runTimeH.toFixed(2)} h`;
     } else {
-        document.getElementById("override_chart").style.visibility = "hidden";
+        pressureGauge.update({ value: -888.88 });
+
+        purgeGauge.update({ value: -888.88 });
+
+        overrideGauge.update({ value: -888.88 });
+
+        batteryGauge.update({ value: -888.88 });
+
+        document.getElementById("pressure_status_text").innerText = `NO DATA`;
+        document.getElementById("ignition_status_text").innerText = `NO DATA`;
+        document.getElementById("run_time_text").innerText = `NO DATA`;
     }
-    overrideGauge.update({ value: 60 - overrideDurationS, });
+}
 
-    batteryGauge.update({ value: data.batteryV, });
+let serviceWorkerRegistration;
 
-    document.getElementById("pressure_status_text").innerText = data.pressureState;
-    document.getElementById("ignition_status_text").innerText = data.ignitionState;
-    let runTimeH = Math.trunc(data.runTimeMs / 1000 / 60 / 60);
-    document.getElementById("run_time_text").innerText = `${runTimeH.toFixed(2)} h`;
+function checkRegisterServiceWorker() {
+    if (!serviceWorkerRegistration || !serviceWorkerRegistration.active) {
+        navigator
+            .serviceWorker
+            .register(
+                // path to the service worker file
+                'serviceworker.js'
+            )
+            .then(registration => {
+                serviceWorkerRegistration = registration;
+
+                console.log(`Service worker registered`);
+            })
+            .catch(error => {
+                console.error(`Problem registering service worker: ${error}`);
+            });
+    }
 }
 
 function main() {
@@ -145,15 +180,7 @@ function main() {
     }
 
     if (useServiceWorker) {
-        navigator
-            .serviceWorker
-            .register(
-                // path to the service worker file
-                'serviceworker.js'
-            )
-            .catch(error => {
-                console.error(`Problem registering service worker: ${error}`);
-            });
+        checkRegisterServiceWorker();
 
         navigator.serviceWorker.ready.then(registration => {
             registration.active.postMessage({
@@ -163,6 +190,10 @@ function main() {
 
             document.addEventListener('visibilitychange', event => {
                 if (document.visibilityState === 'visible') {
+                    updateDisplay();
+
+                    checkRegisterServiceWorker();
+
                     registration.active.postMessage({
                         type: 'ACTIVATE',
                     });
