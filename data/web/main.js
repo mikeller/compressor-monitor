@@ -123,8 +123,8 @@ function updateDisplay(data) {
 
     document.getElementById("pressure_status_text").innerText = data.pressureState;
     document.getElementById("ignition_status_text").innerText = data.ignitionState;
-    let runTimeCh = Math.trunc(data.runTimeMs / 1000 / 60 / 60 * 100);
-    document.getElementById("run_time_text").innerText = `${(runTimeCh / 100).toFixed(2)} h`;
+    let runTimeH = Math.trunc(data.runTimeMs / 1000 / 60 / 60);
+    document.getElementById("run_time_text").innerText = `${runTimeH.toFixed(2)} h`;
 }
 
 function main() {
