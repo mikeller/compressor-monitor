@@ -88,13 +88,11 @@ function getPressureHighlights (pressureLimitBar) {
     ];
 }
 
-function fetchAndUpdate() {
-    fetch(URL)
-        .then(result => result.json())
-        .then(data => updateDisplay(data))
-        .catch(err => {
-            throw err;
-        });
+async function fetchAndUpdate() {
+    let result = await fetch(URL);
+    let data = await result.json();
+
+    updateDisplay(data);
 }
 
 let oldPressureLimitBar = 0;
@@ -141,28 +139,18 @@ function updateDisplay(data) {
     }
 }
 
-let serviceWorkerRegistration;
-
-function checkRegisterServiceWorker() {
-    if (!serviceWorkerRegistration || !serviceWorkerRegistration.active) {
-        navigator
-            .serviceWorker
-            .register(
-                // path to the service worker file
-                'serviceworker.js'
-            )
-            .then(registration => {
-                serviceWorkerRegistration = registration;
-
-                console.log(`Service worker registered`);
-            })
-            .catch(error => {
-                console.error(`Problem registering service worker: ${error}`);
-            });
-    }
+async function checkRegisterServiceWorker() {
+    await navigator.serviceWorker.register('serviceworker.js');
 }
 
-function main() {
+function connectToServiceWorker(registration) {
+    registration.active.postMessage({
+        type: 'CONNECT',
+        intervalMs: intervalMs,
+    });
+}
+
+async function main() {
     pressureGauge.draw();
     purgeGauge.draw();
     batteryGauge.draw();
@@ -170,41 +158,38 @@ function main() {
 
     let useServiceWorker = 'serviceWorker' in navigator;
     if (useServiceWorker) {
-        Notification.requestPermission().then(function (permission) {
-            // If the user accepts, let's create a notification
-            if (permission !== "granted") {
-                useServiceWorker = false;
-                console.log(`Notification permission denied.`);
-            }
-        });
+        let permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+            useServiceWorker = false;
+
+            console.log(`Notification permission denied.`);
+        }
     }
 
     if (useServiceWorker) {
-        checkRegisterServiceWorker();
+        await checkRegisterServiceWorker();
 
-        navigator.serviceWorker.ready.then(registration => {
-            registration.active.postMessage({
-                type: 'CONNECT',
-                intervalMs: intervalMs,
-            });
+        let registration = await navigator.serviceWorker.ready;
 
-            document.addEventListener('visibilitychange', event => {
-                if (document.visibilityState === 'visible') {
-                    updateDisplay();
+        // Including this, but it's probably not triggered often enough to make a difference
+        registration.periodicSync.register('trigger-check-task', {
+            minInterval: 30 * 1000,
+        });
 
-                    checkRegisterServiceWorker();
+        navigator.serviceWorker.onmessage = function (event) {
+            if (event.data && event.data.type === 'DATA') {
+                updateDisplay(event.data.payload);
+            }
+        }
 
-                    registration.active.postMessage({
-                        type: 'ACTIVATE',
-                    });
-                }
-            });
+        connectToServiceWorker(registration);
 
-            navigator.serviceWorker.onmessage = function (event) {
-                if (event.data && event.data.type === 'DATA') {
-                    updateDisplay(event.data.payload);
-                }
-            };
+        document.addEventListener('visibilitychange', event => {
+            if (document.visibilityState === 'visible') {
+                updateDisplay();
+
+                connectToServiceWorker(registration);
+            }
         });
     } else {
         setInterval(fetchAndUpdate, intervalMs);

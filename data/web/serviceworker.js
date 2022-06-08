@@ -32,16 +32,15 @@ function showNotification(data) {
     });
 }
 
-function closeNotifications() {
-    registration.getNotifications({ tag: `compressor-alert` }).then(notifications => {
-        notifications.forEach(notification => notification.close());
-    });
+async function closeNotifications() {
+    let notifications = await registration.getNotifications({ tag: `compressor-alert` });
+    notifications.forEach(notification => notification.close());
 }
 
-function checkShowNotification(data, intervalS) {
+async function checkShowNotification(data, intervalS) {
     let now = Date.now();
     if (now > lastNotificationMs + intervalS * 1000) {
-        closeNotifications();
+        await closeNotifications();
 
         showNotification(data);
 
@@ -52,35 +51,31 @@ function checkShowNotification(data, intervalS) {
 let listeners = [];
 let lastNotificationMs = 0;
 
-function fetchData() {
-	return fetch(URL)
-        .then(result => result.json())
-        .then(data => {
-            listeners.forEach(listener => {
-                listener.postMessage({
-                    type: `DATA`,
-                    payload: data
-                });
-            });
+async function fetchData() {
+    let result = await fetch(URL);
+    let data = await result.json();
 
-            if (data.pressureBar > data.pressureLimitBar) {
-                checkShowNotification(data, 10);
-            } else if (data.pressureBar > (data.pressureLimitBar - 10)) {
-                checkShowNotification(data, 20);
-            } else {
-                closeNotifications();
-            }
-        })
-    .catch(error => {
-        console.error(`Problem fetching data: ${error}`);
+    listeners.forEach(listener => {
+        listener.postMessage({
+            type: `DATA`,
+            payload: data
+        });
     });
+
+    if (data.pressureBar > data.pressureLimitBar) {
+        await checkShowNotification(data, 10);
+    } else if (data.pressureBar > (data.pressureLimitBar - 10)) {
+        await checkShowNotification(data, 20);
+    } else {
+        await closeNotifications();
+    }
 }
 
 let fetcherTask;
 let intervalMs = 5000;
 
-function triggerFetcherTask() {
-    fetchData();
+async function triggerFetcherTask() {
+    await fetchData();
 
     if (fetcherTask) {
         clearInterval(fetcherTask);
@@ -89,22 +84,23 @@ function triggerFetcherTask() {
     fetcherTask = setInterval(fetchData, intervalMs);
 }
 
-
 function main() {
     self.addEventListener("message", event => {
-        if (event.data) {
-            if (event.data.type === 'CONNECT') {
+        if (event.data && event.data.type === 'CONNECT') {
+            if (!listeners.includes(event.source)) {
                 listeners.push(event.source);
-                intervalMs = event.data.intervalMs || intervalMs;
-
-                triggerFetcherTask();
-
-                console.log(`Service worker connected.`);
-            } else if (event.data.type === 'ACTIVATE') {
-                triggerFetcherTask();
-
-                console.log(`Service worker activated.`);
             }
+            intervalMs = event.data.intervalMs || intervalMs;
+
+            event.waitUntil(triggerFetcherTask());
+
+            console.log(`Service worker connected.`);
+        }
+    });
+
+    self.addEventListener('periodicsync', event => {
+        if (event.tag == 'trigger-check-task') {
+            event.waitUntil(triggerFetcherTask());
         }
     });
 }
