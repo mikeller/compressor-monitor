@@ -11,6 +11,10 @@
 
 #include "config.h"
 
+#define FREQUENCY_TO_MS(frequencyHz) (1000 / (frequencyHz))
+
+#define LOOP_FREQUENCY_HZ 200
+
 #if defined(WIFI_CLIENT_SSID) || defined(WIFI_AP_SSID)
 #define USE_WIFI
 
@@ -40,16 +44,20 @@ const IPAddress apIp(WIFI_AP_IP);
 #endif
 
 WebServer webServer(80);
+
+#define DATA_UPDATE_FREQUENCY_HZ 5
+
+#define DATA_BUFFER_SIZE 512
+DynamicJsonDocument dataJson(DATA_BUFFER_SIZE);
+char getDataResponse[DATA_BUFFER_SIZE];
+
 #endif
-
-
-#define LOOP_FREQUENCY_HZ 100
 
 #define BUTTON_REPEAT_DELAY_MS 500
 #define BUTTON_REPEAT_INTERVAL_MS 100
 
 #define BEEPER_SEQUENCE_LENGTH 20
-#define BEEPER_MIN_DURATION_MS 10
+#define BEEPER_UPDATE_FREQUENCY_HZ 100
 
 #define ORANGE 0xFBE0
 
@@ -435,7 +443,7 @@ int64_t getTimeUntilPurgeMs(void)
     return state.lastPurgeRunTimeMs + 1000 * PURGE_INTERVAL_S - state.runTimeMs;
 }
 
-void readSensors(void)
+void readSensors(const uint64_t currentTimeMs)
 {
     static uint32_t pressureSamples[VOLTAGE_SAMPLE_COUNT];
     static uint32_t batterySamples[VOLTAGE_SAMPLE_COUNT];
@@ -444,9 +452,8 @@ void readSensors(void)
     static unsigned sampleIndex = 0;
     static uint64_t lastRunTimeMs = 0;
     
-    uint64_t nowMs = millis();
-    if (nowMs - lastRunTimeMs >= 10) {
-        lastRunTimeMs = nowMs;
+    if (currentTimeMs - lastRunTimeMs >= 10) {
+        lastRunTimeMs = currentTimeMs;
 
         uint32_t adcReading = esp_adc_cal_raw_to_voltage(adc1_get_raw(SENSOR_ADC), &adc_chars);
         pressureSumMv = pressureSumMv - pressureSamples[sampleIndex] + adcReading;
@@ -465,7 +472,7 @@ void readSensors(void)
     }
 }
 
-void updateState(void)
+void updateState(const uint64_t currentTimeMs)
 {
     static uint64_t lastRunTimeUpdateMs;
     static bool lastDumpNeededState;
@@ -473,14 +480,12 @@ void updateState(void)
     static pressureState_t lastPressureState;
 #endif
 
-    uint64_t nowMs = millis();
-
     if (state.ignitionState != IGNITION_STATE_OFF) {
         if (!lastRunTimeUpdateMs) {
-            lastRunTimeUpdateMs = nowMs;
+            lastRunTimeUpdateMs = currentTimeMs;
         } else {
-            state.runTimeMs += nowMs - lastRunTimeUpdateMs;
-            lastRunTimeUpdateMs = nowMs;
+            state.runTimeMs += currentTimeMs - lastRunTimeUpdateMs;
+            lastRunTimeUpdateMs = currentTimeMs;
         }
     } else {
         lastRunTimeUpdateMs = 0;
@@ -528,7 +533,7 @@ void updateState(void)
         if (state.ignitionState == IGNITION_STATE_OFF) {
             state.overrideCountdownStartedMs = 0;
         } else {
-            if (nowMs - state.overrideCountdownStartedMs >= OVERRIDE_DURATION_S * 1000) {
+            if (currentTimeMs - state.overrideCountdownStartedMs >= OVERRIDE_DURATION_S * 1000) {
                 state.overrideCountdownStartedMs = 0;
             }
         }
@@ -549,7 +554,7 @@ void updateState(void)
     }
 #endif
 
-    if (state.nextButtonRepeatEventMs && state.nextButtonRepeatEventMs <= nowMs) {
+    if (state.nextButtonRepeatEventMs && state.nextButtonRepeatEventMs <= currentTimeMs) {
         if (state.inputState == INPUT_STATE_PRESSURE_LIMIT) {
             handlePressureLimitChange(*state.repeatEventButton);
         }
@@ -574,14 +579,13 @@ bool needsBeeperOn(beeperSequence_t sequence, uint32_t period, uint8_t position)
     return false;
 }
 
-void updateBeeper(void)
+void updateBeeper(const uint64_t currentTimeMs)
 {
     static uint64_t lastRunTimeMs = 0;
     static uint32_t sliceCount = 0;
 
-    uint64_t nowMs = millis();
-    if (nowMs - lastRunTimeMs >= BEEPER_MIN_DURATION_MS) {
-        lastRunTimeMs = nowMs;
+    if (lastRunTimeMs + FREQUENCY_TO_MS(BEEPER_UPDATE_FREQUENCY_HZ) <= currentTimeMs) {
+        lastRunTimeMs = currentTimeMs;
 
         sliceCount++;
         uint8_t position = sliceCount % BEEPER_SEQUENCE_LENGTH;
@@ -591,7 +595,7 @@ void updateBeeper(void)
 
 #if defined(HAS_SWITCH)
         if (!state.overrideCountdownStartedMs) {
-            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
+            if (currentTimeMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
             } else {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideActive, period, position);
@@ -618,7 +622,7 @@ void updateBeeper(void)
     }
 }
 
-void updateDisplay(void)
+void updateDisplay(const uint64_t currentTimeMs)
 {
 
 /*
@@ -654,9 +658,8 @@ Right column:
 
     static uint64_t lastRunTimeMs = 0;
     
-    uint64_t nowMs = millis();
-    if (nowMs - lastRunTimeMs >= 200) {
-        lastRunTimeMs = nowMs;
+    if (currentTimeMs - lastRunTimeMs >= 200) {
+        lastRunTimeMs = currentTimeMs;
 
         tft.fillRect(HEADER_X, HEADER_Y, 220, 70, TFT_BLACK);
         tft.fillRect(COL_1, ROW_1, 122, 170, TFT_BLACK);
@@ -684,7 +687,7 @@ Right column:
 
 #if defined(HAS_SWITCH)
         if (state.overrideCountdownStartedMs) {
-            if (nowMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
+            if (currentTimeMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
                 tft.setTextColor(TFT_RED);
             } else {
                 tft.setTextColor(TFT_YELLOW);
@@ -699,7 +702,7 @@ Right column:
         tft.setCursor(COL_1, ROW_3);
 #if defined(HAS_SWITCH)
         if (state.overrideCountdownStartedMs) {
-            tft.printf("%d s", (int)((state.overrideCountdownStartedMs + 1000 * OVERRIDE_DURATION_S - nowMs) / 1000));
+            tft.printf("%d s", (int)((state.overrideCountdownStartedMs + 1000 * OVERRIDE_DURATION_S - currentTimeMs) / 1000));
         } else
 #endif
         {
@@ -778,42 +781,60 @@ void updateButtons(void)
 
 #if defined(USE_WIFI)
 
-#define DATA_BUFFER_SIZE 512
-
-String getDataJson(void)
+void updateDataJson(void)
 {
-    DynamicJsonDocument data(DATA_BUFFER_SIZE);
-
-    data["pressureBar"] = state.pressureBar;
-    data["pressureLimitBar"] = state.pressureLimitBar;
-    data["pressureState"] = pressureStateNames[state.pressureState];
-    data["ignitionState"] = ignitionStateNames[state.ignitionState];
+    dataJson["pressureBar"] = state.pressureBar;
+    dataJson["pressureLimitBar"] = state.pressureLimitBar;
+    dataJson["pressureState"] = pressureStateNames[state.pressureState];
+    dataJson["ignitionState"] = ignitionStateNames[state.ignitionState];
 #if defined(HAS_SWITCH)
-    data["overrideCountdownDurationMs"] = state.overrideCountdownStartedMs ? millis() - state.overrideCountdownStartedMs : 0;
+    dataJson["overrideCountdownDurationMs"] = state.overrideCountdownStartedMs ? millis() - state.overrideCountdownStartedMs : 0;
 #else
-    data["overrideCountdownDurationMs"] = 0;
+    dataJson["overrideCountdownDurationMs"] = 0;
 #endif
-    data["runTimeMs"] = state.runTimeMs;
-    data["timeUntilPurgeMs"] = getTimeUntilPurgeMs();
-    data["batteryV"] = state.batteryV;
+    dataJson["runTimeMs"] = state.runTimeMs;
+    dataJson["timeUntilPurgeMs"] = getTimeUntilPurgeMs();
+    dataJson["batteryV"] = state.batteryV;
+}
 
-    String dataJson;
-    serializeJsonPretty(data, dataJson);
-    return dataJson;
+void updateDataResponse(void)
+{
+    String data;
+    serializeJsonPretty(dataJson, data);
+    data.toCharArray(getDataResponse, DATA_BUFFER_SIZE);
+}
+
+bool updateData(const uint64_t currentTimeMs)
+{
+    static uint64_t lastDataUpdateMs = 0;
+    static bool responseNeedsUpdating = false;
+
+    if (responseNeedsUpdating) {
+        updateDataResponse();
+
+        lastDataUpdateMs = currentTimeMs;
+        responseNeedsUpdating = false;
+
+        return true;
+    } else if (lastDataUpdateMs + FREQUENCY_TO_MS(DATA_UPDATE_FREQUENCY_HZ) < currentTimeMs) {
+        updateDataJson();
+
+        responseNeedsUpdating = true;
+
+        return true;
+    }
+
+    return false;
 }
 
 void handleGetData(void)
 {
-    char response[DATA_BUFFER_SIZE];
-    getDataJson().toCharArray(response, DATA_BUFFER_SIZE);
-    webServer.send(200, F("application/json"), response);
+    webServer.send(200, F("application/json"), getDataResponse);
 }
 
-void updateWebServer(void)
+void updateWebServer(const uint64_t currentTimeMs)
 {
     static uint64_t delayUntilMs = 0;
-
-    uint64_t nowMs = millis();
 
     if (state.serverType != SERVER_TYPE_AP) {
         int wifiStatus = WiFi.status();
@@ -837,7 +858,7 @@ void updateWebServer(void)
         }
     }
 
-    if (nowMs < delayUntilMs) {
+    if (currentTimeMs < delayUntilMs) {
         return;
     }
 
@@ -845,7 +866,7 @@ void updateWebServer(void)
     case SERVER_STATE_WIFI_DISCONNECTED:
 #if defined(WIFI_CLIENT_SSID)
         WiFi.begin((char *)WIFI_CLIENT_SSID, (char *)WIFI_CLIENT_PASSWORD);
-        delayUntilMs = nowMs + 60000; // wait for WiFi to connect
+        delayUntilMs = currentTimeMs + 60000; // wait for WiFi to connect
         state.serverState = SERVER_STATE_WIFI_CONNECTING;
 
         break;
@@ -858,7 +879,7 @@ void updateWebServer(void)
             WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
             state.serverType = SERVER_TYPE_AP;
 
-            delayUntilMs = nowMs + 1000; // wait for WiFi to start
+            delayUntilMs = currentTimeMs + 1000; // wait for WiFi to start
             state.serverState = SERVER_STATE_WIFI_AP_SET_IP;
         }
 
@@ -868,7 +889,7 @@ void updateWebServer(void)
             IPAddress netmask(WIFI_AP_NETMASK);
             WiFi.softAPConfig(apIp, apIp, netmask);
 
-            delayUntilMs = nowMs + 1000; // wait for WiFi to start
+            delayUntilMs = currentTimeMs + 1000; // wait for WiFi to start
             state.serverState = SERVER_STATE_WIFI_CONNECTED;
         }
 #endif
@@ -888,7 +909,7 @@ void updateWebServer(void)
 
         webServer.begin();
         state.serverState = SERVER_STATE_STARTING;
-        delayUntilMs = nowMs + 100;
+        delayUntilMs = currentTimeMs + 100;
 
         break;
     case SERVER_STATE_STARTING:
@@ -905,23 +926,30 @@ void updateWebServer(void)
 
 void loop(void)
 {
-    readSensors();
+    uint64_t loopStartMs = millis();
 
-    updateState();
+    readSensors(loopStartMs);
+
+    updateState(loopStartMs);
 
 #if defined(HAS_SWITCH)
     updateOutput();
 #endif
 
-    updateBeeper();
+    updateBeeper(loopStartMs);
 
-    updateDisplay();
+    updateDisplay(loopStartMs);
 
     updateButtons();
 
 #if defined(USE_WIFI)
-    updateWebServer();
+    if (!updateData(loopStartMs)) {
+        updateWebServer(loopStartMs);
+    }
 #endif
 
-    delay(2);
+    uint64_t loopTimeMs =  millis() - loopStartMs;
+    if (loopTimeMs < FREQUENCY_TO_MS(LOOP_FREQUENCY_HZ)) {
+        delay(FREQUENCY_TO_MS(LOOP_FREQUENCY_HZ) - loopTimeMs);
+    }
 }
