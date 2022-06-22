@@ -1,0 +1,22 @@
+{
+  "name": "compressor-monitor-simulator",
+  "version": "0.1.0",
+  "description": "Simulator for the Compressor Monitor Device",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikeller/compressor-monitor.git"
+  },
+  "author": "Michael Keller",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/mikeller/compressor-monitor/issues"
+  },
+  "homepage": "https://github.com/mikeller/compressor-monitor#readme",
+  "dependencies": {
+    "express": "^4.18.1"
+  }
+}
