@@ -14,6 +14,8 @@
 #define FREQUENCY_TO_MS(frequencyHz) (1000 / (frequencyHz))
 
 #define LOOP_FREQUENCY_HZ 200
+#define DISPLAY_UPDATE_FREQUENCY_HZ 5
+#define BEEPER_UPDATE_FREQUENCY_HZ 100
 
 #if defined(WIFI_CLIENT_SSID) || defined(WIFI_AP_SSID)
 #define USE_WIFI
@@ -57,7 +59,6 @@ char getDataResponse[DATA_BUFFER_SIZE];
 #define BUTTON_REPEAT_INTERVAL_MS 100
 
 #define BEEPER_SEQUENCE_LENGTH 20
-#define BEEPER_UPDATE_FREQUENCY_HZ 100
 
 #define ORANGE 0xFBE0
 
@@ -658,7 +659,7 @@ Right column:
 
     static uint64_t lastRunTimeMs = 0;
     
-    if (currentTimeMs - lastRunTimeMs >= 200) {
+    if (lastRunTimeMs + FREQUENCY_TO_MS(DISPLAY_UPDATE_FREQUENCY_HZ) <= currentTimeMs) {
         lastRunTimeMs = currentTimeMs;
 
         tft.fillRect(HEADER_X, HEADER_Y, 220, 70, TFT_BLACK);
