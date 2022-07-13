@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/mikeller/compressor-monitor#readme",
   "dependencies": {
-    "express": "^4.18.1"
+    "express": "^4.18.1",
+    "keypress": "^0.2.1"
   }
 }
