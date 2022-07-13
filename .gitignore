@@ -4,3 +4,5 @@
 .gcc-flags.json
 .pio
 src/config.h
+
+node_modules
