@@ -7,6 +7,7 @@ import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.RequestFuture
 import com.android.volley.toolbox.Volley
 import org.json.JSONObject
+import java.util.concurrent.ExecutionException
 
 class ApiClient(context: Context) {
     companion object {
@@ -21,7 +22,7 @@ class ApiClient(context: Context) {
             }
     }
 
-    private val url = "http://127.0.0.1:8080/api/getData"
+    private val url = "http://192.168.15.65:8080/api/getData"
 
     fun getData (): Double {
         val future: RequestFuture<JSONObject> = RequestFuture.newFuture()
@@ -30,8 +31,13 @@ class ApiClient(context: Context) {
 
         requestQueue.add(jsonObjectRequest)
 
-        val response = future.get()
-        return response.getDouble("pressureBar")
+        try {
+            val response = future.get()
+
+            return response.getDouble("pressureBar")
+        } catch (exception: ExecutionException) {
+        }
+        return -1.0
     }
 
     private val requestQueue: RequestQueue by lazy {

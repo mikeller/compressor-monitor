@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.flowOn
 class CompressorDataSource(
     applicationContext: Context,
     ioDispatcher: CoroutineDispatcher,
-    private val refreshIntervalMs: Long = 5000
+    private val refreshIntervalMs: Long = 2000
 ) {
     val pressureBar: Flow<Double> = flow {
         while(true) {
