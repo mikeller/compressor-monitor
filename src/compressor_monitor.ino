@@ -11,12 +11,6 @@
 
 #include "config.h"
 
-#define FREQUENCY_TO_MS(frequencyHz) (1000 / (frequencyHz))
-
-#define LOOP_FREQUENCY_HZ 200
-#define DISPLAY_UPDATE_FREQUENCY_HZ 5
-#define BEEPER_UPDATE_FREQUENCY_HZ 100
-
 #if defined(WIFI_CLIENT_SSID) || defined(WIFI_AP_SSID)
 #define USE_WIFI
 
@@ -53,7 +47,19 @@ WebServer webServer(80);
 DynamicJsonDocument dataJson(DATA_BUFFER_SIZE);
 char getDataResponse[DATA_BUFFER_SIZE];
 
+#endif // WIFI_x_SSID
+
+#if !defined(SHOW_IGNITION)
+#undef HAS_SWITCH
 #endif
+
+#define FREQUENCY_TO_MS(frequencyHz) (1000 / (frequencyHz))
+
+#define LOOP_FREQUENCY_HZ 200
+#define DISPLAY_UPDATE_FREQUENCY_HZ 5
+#define BEEPER_UPDATE_FREQUENCY_HZ 100
+
+#define STARTUP_DELAY_MS 5000
 
 #define BUTTON_REPEAT_DELAY_MS 500
 #define BUTTON_REPEAT_INTERVAL_MS 100
@@ -68,6 +74,7 @@ typedef struct beeperSequence_s {
     bool sequence[BEEPER_SEQUENCE_LENGTH];
 } beeperSequence_t;
 
+#if defined(SHOW_IGNITION)
 typedef enum {
     IGNITION_STATE_OFF = 0,
     IGNITION_STATE_ON,
@@ -78,6 +85,7 @@ typedef enum {
 const char *ignitionStateNames[] = { "OFF", "ON", "CONFIRM" };
 
 const uint16_t ignitionStateColours[] = { TFT_RED, TFT_GREEN, TFT_YELLOW };
+#endif
 
 const beeperSequence_t beeperSequenceIgnitionOff = {
     .period = 15,
@@ -151,9 +159,11 @@ const beeperSequence_t beeperSequenceBatteryLow = {
 
 typedef enum {
     INPUT_STATE_PRESSURE_LIMIT = 0,
+#if defined(SHOW_IGNITION)
     INPUT_STATE_IGNITION,
 #if defined(HAS_SWITCH)
     INPUT_STATE_OVERRIDE,
+#endif
 #endif
     INPUT_STATE_PURGE,
     INPUT_STATE_COUNT
@@ -161,13 +171,16 @@ typedef enum {
 
 const char *inputStateNames[] = {
     "LIMIT",
+#if defined(SHOW_IGNITION)
     "IGNITION",
 #if defined(HAS_SWITCH)
     "OVERR",
 #endif
+#endif
     "PURGE",
 };
 
+#if defined(HAS_SWITCH)
 const beeperSequence_t beeperSequenceOverrideActive = {
     .period = 1,
     .offset = 0,
@@ -179,6 +192,7 @@ const beeperSequence_t beeperSequenceOverrideEnding = {
     .offset = 0,
     .sequence = { 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1 },
 };
+#endif
 
 const beeperSequence_t beeperSequencePurgeNeeded = {
     .period = 15,
@@ -214,7 +228,9 @@ typedef struct globalState_s {
     uint64_t overrideCountdownStartedMs;
 #endif
     uint8_t pressureLimitBar;
+#if defined(SHOW_IGNITION)
     ignitionState_t ignitionState;
+#endif
     pressureState_t pressureState;
     batteryState_t batteryState;
     inputState_t inputState;
@@ -251,7 +267,7 @@ esp_adc_cal_characteristics_t adc_chars;
 // Unfortunately this does not work with WiFi
 /*
 void espDelay(uint32_t us)
-{   
+{
     esp_sleep_enable_timer_wakeup(us);
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
     esp_light_sleep_start();
@@ -278,6 +294,7 @@ void handleUpDownButtonPressed(Button2 &button)
         handlePressureLimitChange(button);
 
         break;
+#if defined(SHOW_IGNITION)
     case INPUT_STATE_IGNITION:
         if (button == buttonUp) {
             state.ignitionState = IGNITION_STATE_ON;
@@ -301,6 +318,7 @@ void handleUpDownButtonPressed(Button2 &button)
         }
 
         break;
+#endif
 #endif
     case INPUT_STATE_PURGE:
         if (button == buttonUp) {
@@ -365,10 +383,10 @@ void setupAdc(void)
     }
 
     adc1_config_width(ADC_WIDTH_BIT_12);
-    
+
     adc1_config_channel_atten(SENSOR_ADC, ADC_ATTEN_DB_2_5);
     adc1_config_channel_atten(BATTERY_ADC, ADC_ATTEN_DB_2_5);
-    
+
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_2_5, ADC_WIDTH_BIT_12, DEFAULT_VREF, &adc_chars);
 
     //Check type of calibration value used to characterize ADC
@@ -403,7 +421,7 @@ void setupDisplay(void)
     // Draw the logo
     tft.pushImage(50, 10, 220, 220, compressor_monitor_logo);
 
-    delay(5000);
+    delay(STARTUP_DELAY_MS);
 
     tft.fillScreen(TFT_BLACK);
 }
@@ -427,14 +445,17 @@ void setup(void)
     setupDisplay();
 
     pinMode(BEEPER_PIN, OUTPUT);
-    
+
+    pinMode(LED_1_PIN, OUTPUT);
+    digitalWrite(LED_1_PIN, 0);
+
+#if defined(HAS_SWITCH)
     pinMode(RELAIS_1_PIN, OUTPUT);
     pinMode(RELAIS_2_PIN, OUTPUT);
 
     digitalWrite(RELAIS_1_PIN, 1);
     digitalWrite(RELAIS_2_PIN, 1);
-
-    pinMode(LED_1_PIN, OUTPUT);
+#endif
 
     setupButtons();
 }
@@ -452,7 +473,7 @@ void readSensors(const uint64_t currentTimeMs)
     static uint32_t batterySumMv = 0;
     static unsigned sampleIndex = 0;
     static uint64_t lastRunTimeMs = 0;
-    
+
     if (currentTimeMs - lastRunTimeMs >= 10) {
         lastRunTimeMs = currentTimeMs;
 
@@ -475,10 +496,11 @@ void readSensors(const uint64_t currentTimeMs)
 
 void updateState(const uint64_t currentTimeMs)
 {
-    static uint64_t lastRunTimeUpdateMs;
-    static bool lastDumpNeededState;
+    static bool lastPurgeNeededState = false;
+#if defined(SHOW_IGNITION)
+    static uint64_t lastRunTimeUpdateMs = 0;
 #if defined(HAS_SWITCH)
-    static pressureState_t lastPressureState;
+    static pressureState_t lastPressureState = PRESSURE_STATE_FILLING;
 #endif
 
     if (state.ignitionState != IGNITION_STATE_OFF) {
@@ -491,15 +513,18 @@ void updateState(const uint64_t currentTimeMs)
     } else {
         lastRunTimeUpdateMs = 0;
     }
+#else
+    state.runTimeMs = currentTimeMs - STARTUP_DELAY_MS;
+#endif
 
     int64_t timeUntilPurgeMs = getTimeUntilPurgeMs();
     if (timeUntilPurgeMs <= 0) {
-        if (!lastDumpNeededState) {
+        if (!lastPurgeNeededState) {
             state.inputState = INPUT_STATE_PURGE;
-            lastDumpNeededState = true;
+            lastPurgeNeededState = true;
         }
     } else {
-        lastDumpNeededState = false;
+        lastPurgeNeededState = false;
     }
 
 #if defined(HAS_SWITCH)
@@ -595,7 +620,7 @@ void updateBeeper(const uint64_t currentTimeMs)
         bool beeperOn = false;
 
 #if defined(HAS_SWITCH)
-        if (!state.overrideCountdownStartedMs) {
+        if (state.overrideCountdownStartedMs) {
             if (currentTimeMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceOverrideEnding, period, position);
             } else {
@@ -604,9 +629,11 @@ void updateBeeper(const uint64_t currentTimeMs)
         } else
 #endif
         {
+#if defined(SHOW_IGNITION)
             if (state.ignitionState == IGNITION_STATE_OFF) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceIgnitionOff, period, position);
             }
+#endif
 
             if (state.batteryState == BATTERY_STATE_LOW) {
                 beeperOn = beeperOn || needsBeeperOn(beeperSequenceBatteryLow, period, position);
@@ -620,6 +647,7 @@ void updateBeeper(const uint64_t currentTimeMs)
         }
 
         digitalWrite(BEEPER_PIN, beeperOn);
+        digitalWrite(LED_1_PIN, beeperOn);
     }
 }
 
@@ -658,7 +686,7 @@ Right column:
 #define IP_SIZE 15
 
     static uint64_t lastRunTimeMs = 0;
-    
+
     if (lastRunTimeMs + FREQUENCY_TO_MS(DISPLAY_UPDATE_FREQUENCY_HZ) <= currentTimeMs) {
         lastRunTimeMs = currentTimeMs;
 
@@ -686,6 +714,7 @@ Right column:
         tft.setCursor(COL_1, ROW_2);
         tft.printf("%d bar", state.pressureLimitBar);
 
+#if defined(SHOW_IGNITION)
 #if defined(HAS_SWITCH)
         if (state.overrideCountdownStartedMs) {
             if (currentTimeMs - state.overrideCountdownStartedMs >= (OVERRIDE_DURATION_S - 10) * 1000) {
@@ -709,6 +738,7 @@ Right column:
         {
             tft.printf(ignitionStateNames[state.ignitionState]);
         }
+#endif
 
         tft.setTextColor(batteryStateColours[state.batteryState]);
         tft.setCursor(COL_HEADING_1, ROW_4);
@@ -787,7 +817,11 @@ void updateDataJson(void)
     dataJson["pressureBar"] = state.pressureBar;
     dataJson["pressureLimitBar"] = state.pressureLimitBar;
     dataJson["pressureState"] = pressureStateNames[state.pressureState];
+#if defined(SHOW_IGNITION)
     dataJson["ignitionState"] = ignitionStateNames[state.ignitionState];
+#else
+    dataJson["ignitionState"] = "ON";
+#endif
 #if defined(HAS_SWITCH)
     dataJson["overrideCountdownDurationMs"] = state.overrideCountdownStartedMs ? millis() - state.overrideCountdownStartedMs : 0;
 #else
