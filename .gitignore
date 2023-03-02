@@ -6,3 +6,5 @@
 src/config.h
 
 node_modules
+
+.swp
