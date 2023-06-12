@@ -569,7 +569,7 @@ void updateState(const uint64_t currentTimeMs)
 #endif
 
     int64_t timeUntilPurgeMs = getTimeUntilPurgeMs();
-    if (timeUntilPurgeMs <= 0) {
+    if (timeUntilPurgeMs < WARN_TIME_S * MS_PER_S) {
         if (!lastPurgeNeededState) {
             state.inputState = INPUT_STATE_PURGE;
             lastPurgeNeededState = true;
