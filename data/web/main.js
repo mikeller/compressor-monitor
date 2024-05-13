@@ -198,4 +198,14 @@ async function main() {
     document.getElementById("notifications_status_text").innerText = useServiceWorker ? `ON` : `OFF`;
 }
 
+function confirmResetPurgeInterval()
+{
+    let result = confirm("OK to reset the purge interval?");
+    if (result) {
+        fetch("/api/resetPurgeInterval");
+    }
+
+    return false;
+}
+
 main();
