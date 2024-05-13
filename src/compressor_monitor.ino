@@ -17,7 +17,8 @@
 
 #include <WiFi.h>
 #include <SPIFFS.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
 
@@ -40,12 +41,12 @@ const IPAddress apIp(WIFI_AP_IP);
 #endif
 #endif
 
-WebServer webServer(80);
+AsyncWebServer webServer(80);
 
 #define DATA_UPDATE_FREQUENCY_HZ 5
 
+JsonDocument dataJson;
 #define DATA_BUFFER_SIZE 1024
-DynamicJsonDocument dataJson(DATA_BUFFER_SIZE);
 char getDataResponse[DATA_BUFFER_SIZE];
 
 #endif // WIFI_x_SSID
@@ -255,17 +256,6 @@ typedef struct globalState_s {
 } globalState_t;
 
 globalState_t state;
-
-const char *webResources[] = {
-    "manifest.json",
-    "dive_tanks_512x512.png",
-    "dive_tanks_192x192.png",
-    "stylesheet.css",
-    "gauge.min.js",
-    "main.js",
-    "serviceworker.js",
-    "favicon.ico",
-};
 
 TFT_eSPI tft = TFT_eSPI(240, 320);
 
@@ -962,9 +952,14 @@ bool updateData(const uint64_t currentTimeMs)
     return false;
 }
 
-void handleGetData(void)
+void handleGetData(AsyncWebServerRequest *request)
 {
-    webServer.send(200, F("application/json"), getDataResponse);
+    request->send(200, "application/json", getDataResponse);
+}
+
+void handleNotFound(AsyncWebServerRequest *request)
+{
+    request->send(404, "Not found");
 }
 
 void updateWebServer(const uint64_t currentTimeMs)
@@ -1031,16 +1026,12 @@ void updateWebServer(const uint64_t currentTimeMs)
 
         break;
     case SERVER_STATE_WIFI_CONNECTED:
-        webServer.on(F("/api/getData"), handleGetData);
+        webServer.on("/api/getData", HTTP_GET, handleGetData);
 
-        webServer.serveStatic("/", SPIFFS, "/web/index.html");
+        webServer.serveStatic("/", SPIFFS, "/web/")
+            .setDefaultFile("index.html");
 
-        for (unsigned i = 0; i < sizeof(webResources) / sizeof(char *); i++) {
-            char urlBuffer[64] = "/";
-            char fileBuffer[64] = "/web/";
-
-            webServer.serveStatic(strcat(urlBuffer, webResources[i]), SPIFFS, strcat(fileBuffer, webResources[i]));
-        }
+        webServer.onNotFound(handleNotFound);
 
         webServer.begin();
         state.serverState = SERVER_STATE_STARTING;
@@ -1052,7 +1043,6 @@ void updateWebServer(const uint64_t currentTimeMs)
 
         break;
     default:
-        webServer.handleClient();
 
         break;
     }
