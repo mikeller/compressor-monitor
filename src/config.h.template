@@ -23,6 +23,9 @@
 #define PURGE_INTERVAL_S (15 * 60)
 #define PURGE_GRACE_TIME_S (10 * 60)
 
+#define MIN_PRESSURE_LIMIT_BAR 1
+#define MAX_PRESSURE_LIMIT_BAR 300
+
 #define DEFAULT_PRESSURE_LIMIT_BAR 200
 
 // Use MEASURE_V_REF to route VRef to GPIO 25 and measure it,

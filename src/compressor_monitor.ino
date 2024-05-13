@@ -49,6 +49,8 @@ JsonDocument dataJson;
 #define DATA_BUFFER_SIZE 1024
 char getDataResponse[DATA_BUFFER_SIZE];
 
+#define PRESSURE_LIMIT_PARAMETER_NAME "pressureLimitBar"
+
 #endif // WIFI_x_SSID
 
 #if !defined(USE_IGNITION)
@@ -279,11 +281,11 @@ void espDelay(uint32_t us)
 void handlePressureLimitChange(Button2 &button)
 {
     if (button == buttonUp) {
-        if (state.pressureLimitBar < 300) {
+        if (state.pressureLimitBar < MAX_PRESSURE_LIMIT_BAR) {
             state.pressureLimitBar++;
         }
     } else {
-        if (state.pressureLimitBar > 0) {
+        if (state.pressureLimitBar > MIN_PRESSURE_LIMIT_BAR) {
             state.pressureLimitBar--;
         }
     }
@@ -957,6 +959,32 @@ void handleGetData(AsyncWebServerRequest *request)
     request->send(200, "application/json", getDataResponse);
 }
 
+void handleSetPressureLimit(AsyncWebServerRequest *request)
+{
+    if (request->hasParam(PRESSURE_LIMIT_PARAMETER_NAME, true)) {
+        AsyncWebParameter* pressureLimitParam = request->getParam(PRESSURE_LIMIT_PARAMETER_NAME, true);
+        if (pressureLimitParam->isPost()) {
+            long pressureLimitValue = pressureLimitParam->value().toInt();
+            if (pressureLimitValue >= MIN_PRESSURE_LIMIT_BAR && pressureLimitValue <= MAX_PRESSURE_LIMIT_BAR) {
+                state.pressureLimitBar = pressureLimitValue;
+
+                request->redirect("/");
+
+                return;
+            }
+        }
+    }
+
+    request->redirect("/settings.html");
+}
+
+void handleResetPurgeInterval(AsyncWebServerRequest *request)
+{
+    state.lastPurgeRunTimeMs = state.runTimeMs;
+
+    request->send(200, "ok");
+}
+
 void handleNotFound(AsyncWebServerRequest *request)
 {
     request->send(404, "Not found");
@@ -1027,6 +1055,10 @@ void updateWebServer(const uint64_t currentTimeMs)
         break;
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on("/api/getData", HTTP_GET, handleGetData);
+
+        webServer.on("/api/setPressureLimit", HTTP_POST, handleSetPressureLimit);
+
+        webServer.on("/api/resetPurgeInterval", HTTP_GET, handleResetPurgeInterval);
 
         webServer.serveStatic("/", SPIFFS, "/web/")
             .setDefaultFile("index.html");

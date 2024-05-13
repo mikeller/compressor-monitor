@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen"/>
+  </head>
+  <body>
+    <div>
+      <form action="/api/setPressureLimit" method="post">
+        <div>
+          <label for="pressureLimit">Pressure Limit [bar] (1 - 300):</label>
+          <input id="pressureLimit" type="number" name="pressureLimitBar" value="200" min="1" max="300"/>
+        </div>
+        <div>
+          <input type="submit" value="Save"/>
+        </div>
+      </form>
+    <div>
+    </div>
+      <form action="/">
+        <input type="submit" value="Cancel"/>
+      </form>
+    </div>
+  </body>
+</html>
