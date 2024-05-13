@@ -21,6 +21,8 @@
 #define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
 
+#include <WebConfig.h>
+
 #if defined(WIFI_CLIENT_SSID) && !defined(WIFI_CLIENT_PASSWORD)
 #define WIFI_CLIENT_PASSWORD NULL
 #endif
@@ -41,6 +43,25 @@ const IPAddress apIp(WIFI_AP_IP);
 #endif
 
 WebServer webServer(80);
+
+String configParams = "["
+        "{"
+            "\"name\":\"ssid\","
+            "\"label\":\"WiFi SSID\","
+            "\"type\":" + String(INPUTTEXT) + ","
+            "\"default\":\"\""
+        "},"
+        "{"
+            "\"name\":\"switch\","
+            "\"label\":\"Switch\","
+            "\"type\":" + String(INPUTCHECKBOX) + ","
+            "\"default\":\"1\""
+        "}"
+    "]";
+
+#define CONFIG_FILE_NAME "/config/settings.conf"
+
+WebConfig config;
 
 #define DATA_UPDATE_FREQUENCY_HZ 5
 
@@ -366,6 +387,39 @@ void setupButtons(void)
     buttonCycle.setPressedHandler(handleCycleButtonPressed);
 }
 
+void configDoneHandler(String results)
+{
+    config.writeConfig(CONFIG_FILE_NAME);
+
+    webServer.sendHeader("Location", "/",true);
+    webServer.send(302, "text/plain", "");
+}
+
+void configCancelHandler(void)
+{
+    webServer.sendHeader("Location", "/",true);
+    webServer.send(302, "text/plain", "");
+}
+
+void configDeleteHandler(String name)
+{
+    config.deleteConfig(CONFIG_FILE_NAME);
+
+    webServer.sendHeader("Location", "/",true);
+    webServer.send(302, "text/plain", "");
+}
+
+void setupConfig(void)
+{
+    config.setDescription(configParams);
+    config.readConfig(CONFIG_FILE_NAME);
+
+    config.setButtons(BTN_DONE | BTN_CANCEL | BTN_DELETE);
+    config.registerOnDone(configDoneHandler);
+    config.registerOnCancel(configCancelHandler);
+    config.registerOnDelete(configDeleteHandler);
+}
+
 #if defined(MEASURE_V_REF)
 void measureVRef(void)
 {
@@ -471,6 +525,8 @@ void setup(void)
 #endif
 
     setupButtons();
+
+    setupConfig();
 }
 
 int64_t getTimeUntilPurgeMs(void)
@@ -967,6 +1023,22 @@ void handleGetData(void)
     webServer.send(200, F("application/json"), getDataResponse);
 }
 
+void handleConfig() {
+    config.handleFormRequest(&webServer, CONFIG_FILE_NAME);
+    if (webServer.hasArg("SAVE")) {
+        uint8_t cnt = config.getCount();
+        Serial.println("*********** Configuration ************");
+        for (uint8_t i = 0; i < cnt; i++) {
+            Serial.print(config.getName(i));
+            Serial.print(" = ");
+            Serial.println(config.values[i]);
+        }
+        if (config.getBool("switch")) {
+            Serial.printf("%s \n", config.getValue("ssid"));
+        }
+    }
+}
+
 void updateWebServer(const uint64_t currentTimeMs)
 {
     static uint64_t delayUntilMs = 0;
@@ -1032,6 +1104,7 @@ void updateWebServer(const uint64_t currentTimeMs)
         break;
     case SERVER_STATE_WIFI_CONNECTED:
         webServer.on(F("/api/getData"), handleGetData);
+        webServer.on(F("/config"), handleConfig);
 
         webServer.serveStatic("/", SPIFFS, "/web/index.html");
 
