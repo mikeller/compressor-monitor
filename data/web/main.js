@@ -10,29 +10,16 @@ var pressureGauge = new RadialGauge({
     minorTicks: 5,
     units: "bar",
     title: "Pressure",
-    highlights: getPressureHighlights(),
+    highlights: getPressureHighlights(200),
 });
 
-let purgeGauge = new RadialGauge({
-    renderTo: 'purge_chart',
+let timeRemainingGauge = new RadialGauge(Object.assign({
+    renderTo: 'time_remaining_chart',
     minValue: -10,
-    maxValue: 15,
-    majorTicks: [-10, 5, 0, 5, 10, 15],
     minorTicks: 5,
     units: "min",
-    title: "Purge Due In",
-    highlights: [
-        {
-            from: -10,
-            to: 0,
-            color: 'red',
-        }, {
-            from: 0,
-            to: 1,
-            color: 'yellow',
-        }
-    ],
-});
+    title: "Time Remaining",
+}, getTimeRemainingOptions(1800000, 120000)));
 
 let batteryGauge = new RadialGauge({
     renderTo: 'battery_chart',
@@ -74,7 +61,7 @@ let overrideGauge = new RadialGauge({
     ],
 });
 
-function getPressureHighlights (pressureLimitBar) {
+function getPressureHighlights(pressureLimitBar) {
     return [
         {
             from: pressureLimitBar,
@@ -88,6 +75,29 @@ function getPressureHighlights (pressureLimitBar) {
     ];
 }
 
+function getTimeRemainingOptions(maxTimeRemainingMs, warnTimeMs) {
+    let majorTicks = [];
+    for (let i = -10; i <= maxTimeRemainingMs / 60000; i+=5) {
+        majorTicks.push(i);
+    }
+
+    return {
+        maxValue: maxTimeRemainingMs / 60000,
+        majorTicks: majorTicks,
+        highlights: [
+            {
+                from: -10,
+                to: 0,
+                color: 'red',
+            }, {
+                from: 0,
+                to: warnTimeMs / 60000,
+                color: 'yellow',
+            }
+        ],
+    };
+}
+
 async function fetchAndUpdate() {
     let result = await fetch(URL);
     let data = await result.json();
@@ -96,19 +106,34 @@ async function fetchAndUpdate() {
 }
 
 let oldPressureLimitBar = 0;
+let oldPurgeIntervalMs = 0;
+let oldWarnTimeMs = 0;
 
 function updateDisplay(data) {
     if (data) {
-        let pressureOptions = {
-            value: data.pressureBar,
-        };
-        if (oldPressureLimitBar !== data.pressureLimitBar) {
-            pressureOptions.highlights = getPressureHighlights(data.pressureLimitBar);
-            oldPressureLimitBar = data.pressureLimitBar;
+        let pressureOptions = {};
+        let pressureLimitBar = data.settings.pressureLimitBar;
+        if (oldPressureLimitBar !== pressureLimitBar) {
+            pressureOptions.highlights = getPressureHighlights(pressureLimitBar);
+            oldPressureLimitBar = pressureLimitBar;
         }
+        pressureOptions.value = data.pressureBar;
         pressureGauge.update(pressureOptions);
 
-        purgeGauge.update({ value: data.timeUntilPurgeMs / 60000, });
+        let timeRemainingOptions = {};
+        let purgeIntervalMs = data.settings.purgeIntervalMs;
+        let warnTimeMs = data.settings.warnTimeMs;
+        if (oldPurgeIntervalMs !== purgeIntervalMs || oldWarnTimeMs !== warnTimeMs) {
+            timeRemainingOptions = getTimeRemainingOptions(purgeIntervalMs, warnTimeMs);
+            oldPurgeIntervalMs = purgeIntervalMs;
+            oldWarnTimeMs = warnTimeMs;
+        }
+        let timeRemainingMin = data.timeUntilPurgeMs / 60000;
+        if (data.timeUntilFullEstimateMs >= 0 && data.timeUntilFullEstimateMs / 60000 < timeRemainingMin) {
+            timeRemainingMin = data.timeUntilFullEstimateMs / 60000;
+        }
+        timeRemainingOptions.value = timeRemainingMin;
+        timeRemainingGauge.update(timeRemainingOptions);
 
         let overrideDurationS = data.overrideCountdownDurationMs / 1000;
         if (overrideDurationS) {
@@ -124,10 +149,12 @@ function updateDisplay(data) {
         document.getElementById("ignition_status_text").innerText = data.ignitionState;
         let runTimeH = data.runTimeMs / 1000 / 60 / 60;
         document.getElementById("run_time_text").innerText = `${runTimeH.toFixed(2)} h`;
+
+        document.getElementById("alerts_text").innerText = data.alerts.join("\n");
     } else {
         pressureGauge.update({ value: -888.88 });
 
-        purgeGauge.update({ value: -888.88 });
+        timeRemainingGauge.update({ value: -888.88 });
 
         overrideGauge.update({ value: -888.88 });
 
@@ -152,7 +179,7 @@ function connectToServiceWorker(registration) {
 
 async function main() {
     pressureGauge.draw();
-    purgeGauge.draw();
+    timeRemainingGauge.draw();
     batteryGauge.draw();
     overrideGauge.draw();
 

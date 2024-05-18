@@ -884,7 +884,6 @@ void updateDataJson(void)
     dataJson.clear();
 
     dataJson["pressureBar"] = state.pressureBar;
-    dataJson["pressureLimitBar"] = state.pressureLimitBar;
     dataJson["pressureState"] = pressureStateNames[state.pressureState];
 #if defined(USE_IGNITION)
     dataJson["ignitionState"] = ignitionStateNames[state.ignitionState];
@@ -898,9 +897,8 @@ void updateDataJson(void)
 #endif
     dataJson["runTimeMs"] = state.runTimeMs;
     dataJson["timeUntilPurgeMs"] = getTimeUntilPurgeMs();
-    dataJson["batteryV"] = state.batteryV;
     dataJson["timeUntilFullEstimateMs"] = state.timeUntilFullEstimateMs;
-    dataJson["warnTimeMs"] = WARN_TIME_S * MS_PER_S;
+    dataJson["batteryV"] = state.batteryV;
 
     JsonArray alerts = dataJson["alerts"].to<JsonArray>();
     if (state.pressureState != PRESSURE_STATE_FILLING) {
@@ -922,6 +920,11 @@ void updateDataJson(void)
     if (getTimeUntilPurgeMs() <= WARN_TIME_S * MS_PER_S) {
         alerts.add("PURGE");
     }
+
+    JsonObject settings = dataJson["settings"].to<JsonObject>();
+    settings["pressureLimitBar"] = state.pressureLimitBar;
+    settings["purgeIntervalMs"] = PURGE_INTERVAL_S * MS_PER_S;
+    settings["warnTimeMs"] = WARN_TIME_S * MS_PER_S;
 }
 
 void updateDataResponse(void)
