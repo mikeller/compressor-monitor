@@ -29,7 +29,7 @@
     </div>
     <div class="main_bar">
       <div class="chart">
-        <canvas id="purge_chart"></canvas>
+        <canvas id="time_remaining_chart"></canvas>
       </div>
       <div class="text_box">
         <div class="data_heading">Pressure Status:</div>
@@ -40,6 +40,8 @@
         <div class="data_text" id="run_time_text"></div>
         <div class="data_heading">Notifications:</div>
         <div class="data_text" id="notifications_status_text"></div>
+        <div class="data_heading">Alerts:</div>
+        <div class="data_text" id="alerts_text"></div>
       </div>
     </div>
     <div class="main_bar">
@@ -51,8 +53,10 @@
       </div>
     </div>
     <div>
-      <a href="/settings.html">Settings</a>
-      <a href="/" onclick="return confirmResetPurgeInterval();">Reset purge interval</a>
+      <form>
+        <input type="button" onclick="window.location='/settings.html';" value="Settings"/>
+        <input type="button" onclick="confirmResetPurgeInterval();" value="Reset purge interval"/>
+      </form>
     </div>
   </body>
 </html>
