@@ -1,0 +1,6 @@
+# CodeRabbit configuration for this repository.
+# Reference: https://docs.coderabbit.ai/reference/configuration
+reviews:
+  auto_review:
+    # Review draft pull requests in addition to ready-for-review ones.
+    drafts: true
